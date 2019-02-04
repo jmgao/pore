@@ -143,6 +143,15 @@ impl Tree {
     Ok(toml::from_str(&text).context("failed to deserialize tree config")?)
   }
 
+  fn progress_bar_style(project_count: usize) -> indicatif::ProgressStyle {
+    let project_count_digits = project_count.to_string().len();
+    let count = "{pos:>".to_owned() + &(6 - project_count_digits).to_string() + "}/{len}";
+    let template = "[{elapsed_precise}] {prefix} ".to_owned() + &count + " {bar:40.cyan/blue}: {msg}";
+    indicatif::ProgressStyle::default_bar()
+      .template(&template)
+      .progress_chars("##-")
+  }
+
   fn sync_repos(
     &mut self,
     pool: &mut ThreadPool,
@@ -154,22 +163,12 @@ impl Tree {
     let remote_config = Arc::new(remote_config.clone());
     let depot: Arc<Depot> = Arc::new(depot.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
-
     let project_count = projects.len();
-
-    // We want all of the x/y values to be aligned.
-    // We're still under 1,000 projects, so align to XXX/YYY while that's still true.
-    let project_count_digits = project_count.to_string().len();
-    let count = "{pos:>".to_owned() + &(6 - project_count_digits).to_string() + "}/{len}";
-    let template = "[{elapsed_precise}] {prefix} ".to_owned() + &count + " {bar:40.cyan/blue}: {msg}";
-
-    let sty = indicatif::ProgressStyle::default_bar()
-      .template(&template)
-      .progress_chars("##-");
+    let style = Tree::progress_bar_style(project_count);
 
     if fetch {
       let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-      pb.set_style(sty.clone());
+      pb.set_style(style.clone());
       pb.set_prefix("fetching");
       pb.enable_steady_tick(1000);
       let mut handles = Vec::new();
@@ -214,7 +213,7 @@ impl Tree {
     }
 
     let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-    pb.set_style(sty.clone());
+    pb.set_style(style.clone());
     pb.set_prefix("checkout");
     pb.enable_steady_tick(1000);
     let mut checkout_handles = Vec::new();
