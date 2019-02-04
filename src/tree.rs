@@ -312,4 +312,76 @@ impl Tree {
 
     Ok(())
   }
+
+  pub fn status(&self, config: Config, pool: &mut ThreadPool, status_under: Option<Vec<&str>>) -> Result<(), Error> {
+    ensure!(
+      status_under.is_none(),
+      "limiting status by path is currently unimplemented"
+    );
+    let projects = self.config.projects.clone();
+    let project_count = projects.len();
+    let style = Tree::progress_bar_style(project_count);
+
+    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
+    pb.set_style(Tree::progress_bar_style(project_count));
+    pb.set_prefix("git status");
+
+    let tree_root = Arc::new(self.path.clone());
+
+    let mut handles = Vec::new();
+    for project in projects {
+      let pb = Arc::clone(&pb);
+      let tree_root = Arc::clone(&tree_root);
+      let handle = pool
+        .spawn_with_handle(future::lazy(move |_| -> Result<(String, Vec<String>), Error> {
+          let path = tree_root.join(&project);
+          let repo = git2::Repository::open(&path).context(format!("failed to open repository {}", project))?;
+          let statuses = repo
+            .statuses(Some(git2::StatusOptions::new().include_untracked(true)))
+            .context(format!("failed to get status of repository {}", project))?;
+
+          pb.set_message(&project.to_string());
+          pb.inc(1);
+
+          // TODO: Collect more than just the name of files.
+          let files: Vec<String> = statuses
+            .iter()
+            .map(|status| status.path().unwrap_or("???").to_string())
+            .collect();
+          Ok((project, files))
+        }))
+        .map_err(|err| format_err!("failed to spawn job to run git status"))?;
+      handles.push(handle);
+    }
+
+    let results = pool.run(future::join_all(handles));
+    pb.finish();
+
+    // Don't bail until we've listed all of the changes.
+    let mut bail = false;
+    for result in results {
+      match result {
+        Ok((project, files)) => {
+          if !files.is_empty() {
+            println!("{}", project);
+            for file in files {
+              println!("  {}", file);
+            }
+            println!();
+          }
+        }
+
+        Err(err) => {
+          eprintln!("{}", err);
+          bail = true;
+        }
+      }
+    }
+
+    if bail {
+      bail!("failed to git status");
+    }
+
+    Ok(())
+  }
 }

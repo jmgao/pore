@@ -298,7 +298,12 @@ fn main() {
 
       ("upload", Some(submatches)) => unimplemented_subcommand("upload"),
 
-      ("status", Some(submatches)) => unimplemented_subcommand("status"),
+      ("status", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let tree = Tree::find_from_path(cwd.clone())?;
+        let status_under = submatches.values_of("PATH").map(|values| values.collect());
+        tree.status(config, &mut pool, status_under)
+      }
 
       _ => {
         unreachable!();
