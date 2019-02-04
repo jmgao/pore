@@ -136,6 +136,7 @@ fn main() {
     (global_setting: clap::AppSettings::ColoredHelp)
 
     // The defaults for these have the wrong tense and capitalization.
+    // TODO: Write an upstream patch to allow overriding these in the subcommends globally.
     (help_message: "print help message")
     (version_message: "print version information")
 
