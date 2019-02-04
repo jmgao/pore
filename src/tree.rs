@@ -67,6 +67,70 @@ struct ProjectInfo {
 }
 
 impl Tree {
+  pub fn construct<T: Into<PathBuf>>(
+    depot: &Depot,
+    path: T,
+    remote_config: &RemoteConfig,
+    branch: &str,
+    fetch: bool,
+  ) -> Result<Tree, Error> {
+    let tree_root = path.into();
+
+    // TODO: Add locking?
+    util::assert_empty_directory(&tree_root)?;
+    let pore_path = tree_root.join(".pore");
+    let remote = &remote_config.name;
+
+    std::fs::create_dir_all(&pore_path).context(format!("failed to create directory {:?}", pore_path))?;
+
+    let manifest_path = pore_path.join("manifest");
+    symlink("manifest/default.xml", pore_path.join("manifest.xml")).context("failed to create manifest symlink")?;
+
+    if fetch {
+      depot.fetch_repo(&remote_config, &remote_config.manifest, &branch, None, None)?;
+    }
+    depot.clone_repo(&remote_config, &remote_config.manifest, &branch, &manifest_path)?;
+
+    let tree_config = TreeConfig {
+      remote: remote_config.name.clone(),
+      branch: branch.into(),
+      manifest: remote_config.manifest.clone(),
+      tags: Vec::new(),
+      projects: Vec::new(),
+    };
+
+    let tree = Tree {
+      path: tree_root.clone(),
+      config: tree_config,
+    };
+
+    tree.write_config()?;
+    Ok(tree)
+  }
+
+  pub fn from_path<T: Into<PathBuf>>(path: T) -> Result<Tree, Error> {
+    let path: PathBuf = path.into();
+    if path.join(".pore").exists() {
+      let config = Tree::read_config(&path)?;
+      Ok(Tree { path, config })
+    } else {
+      Err(format_err!("failed to find tree at {:?}", path))
+    }
+  }
+
+  pub fn find_from_path<T: Into<PathBuf>>(path: T) -> Result<Tree, Error> {
+    let mut path: PathBuf = path.into();
+    while !path.join(".pore").exists() {
+      if let Some(parent) = path.parent() {
+        path = parent.to_path_buf();
+      } else {
+        bail!("failed to find tree enclosing {:?}", path);
+      }
+    }
+
+    Tree::from_path(path)
+  }
+
   fn write_config(&self) -> Result<(), Error> {
     let text = toml::to_string_pretty(&self.config).context("failed to serialize tree config")?;
     Ok(std::fs::write(self.path.join(".pore").join("tree.toml"), text).context("failed to write tree config")?)
@@ -248,69 +312,5 @@ impl Tree {
     self.sync_repos(&mut pool, depot, &remote_config, projects, fetch != FetchType::NoFetch)?;
 
     Ok(())
-  }
-
-  pub fn construct<T: Into<PathBuf>>(
-    depot: &Depot,
-    path: T,
-    remote_config: &RemoteConfig,
-    branch: &str,
-    fetch: bool,
-  ) -> Result<Tree, Error> {
-    let tree_root = path.into();
-
-    // TODO: Add locking?
-    util::assert_empty_directory(&tree_root)?;
-    let pore_path = tree_root.join(".pore");
-    let remote = &remote_config.name;
-
-    std::fs::create_dir_all(&pore_path).context(format!("failed to create directory {:?}", pore_path))?;
-
-    let manifest_path = pore_path.join("manifest");
-    symlink("manifest/default.xml", pore_path.join("manifest.xml")).context("failed to create manifest symlink")?;
-
-    if fetch {
-      depot.fetch_repo(&remote_config, &remote_config.manifest, &branch, None, None)?;
-    }
-    depot.clone_repo(&remote_config, &remote_config.manifest, &branch, &manifest_path)?;
-
-    let tree_config = TreeConfig {
-      remote: remote_config.name.clone(),
-      branch: branch.into(),
-      manifest: remote_config.manifest.clone(),
-      tags: Vec::new(),
-      projects: Vec::new(),
-    };
-
-    let tree = Tree {
-      path: tree_root.clone(),
-      config: tree_config,
-    };
-
-    tree.write_config()?;
-    Ok(tree)
-  }
-
-  pub fn from_path<T: Into<PathBuf>>(path: T) -> Result<Tree, Error> {
-    let path: PathBuf = path.into();
-    if path.join(".pore").exists() {
-      let config = Tree::read_config(&path)?;
-      Ok(Tree { path, config })
-    } else {
-      Err(format_err!("failed to find tree at {:?}", path))
-    }
-  }
-
-  pub fn find_from_path<T: Into<PathBuf>>(path: T) -> Result<Tree, Error> {
-    let mut path: PathBuf = path.into();
-    while !path.join(".pore").exists() {
-      if let Some(parent) = path.parent() {
-        path = parent.to_path_buf();
-      } else {
-        bail!("failed to find tree enclosing {:?}", path);
-      }
-    }
-
-    Tree::from_path(path)
   }
 }
