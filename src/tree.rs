@@ -278,7 +278,7 @@ impl Tree {
     fetch: FetchType,
     checkout: CheckoutType,
   ) -> Result<(), Error> {
-    ensure!(sync_under.is_none(), "sync under is currently unimplemented");
+    ensure!(sync_under.is_none(), "limiting sync by path is currently unimplemented");
 
     // Sync the manifest repo first.
     let remote_config = config.find_remote(&self.config.remote)?;
