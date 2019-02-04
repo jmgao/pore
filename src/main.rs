@@ -41,6 +41,7 @@ extern crate shellexpand;
 
 extern crate git2;
 
+extern crate console;
 extern crate indicatif;
 
 use std::io::Write;

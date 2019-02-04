@@ -66,6 +66,43 @@ struct ProjectInfo {
   revision: String,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum FileState {
+  New,
+  Modified,
+  Deleted,
+  Renamed,
+  TypeChange,
+  Unchanged,
+}
+
+impl FileState {
+  fn to_char(&self) -> char {
+    match self {
+      FileState::New => 'a',
+      FileState::Modified => 'm',
+      FileState::Deleted => 'd',
+      FileState::Renamed => 'r',
+      FileState::TypeChange => 'd',
+      FileState::Unchanged => '-',
+    }
+  }
+}
+
+#[derive(Debug)]
+pub struct FileStatus {
+  pub filename: String,
+  pub index: FileState,
+  pub worktree: FileState,
+}
+
+#[derive(Debug)]
+pub struct ProjectStatus {
+  project_name: String,
+  branch: Option<String>,
+  files: Vec<FileStatus>,
+}
+
 impl Tree {
   pub fn construct<T: Into<PathBuf>>(
     depot: &Depot,
@@ -334,9 +371,19 @@ impl Tree {
       let pb = Arc::clone(&pb);
       let tree_root = Arc::clone(&tree_root);
       let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<(String, Vec<String>), Error> {
+        .spawn_with_handle(future::lazy(move |_| -> Result<ProjectStatus, Error> {
           let path = tree_root.join(&project);
           let repo = git2::Repository::open(&path).context(format!("failed to open repository {}", project))?;
+
+          let head = repo
+            .head()
+            .context(format!("failed to get HEAD for repository {}", project))?;
+          let branch = if head.is_branch() {
+            Some(head.shorthand().unwrap().to_string())
+          } else {
+            None
+          };
+
           let statuses = repo
             .statuses(Some(git2::StatusOptions::new().include_untracked(true)))
             .context(format!("failed to get status of repository {}", project))?;
@@ -344,42 +391,98 @@ impl Tree {
           pb.set_message(&project.to_string());
           pb.inc(1);
 
-          // TODO: Collect more than just the name of files.
-          let files: Vec<String> = statuses
+          let files: Vec<FileStatus> = statuses
             .iter()
-            .map(|status| status.path().unwrap_or("???").to_string())
+            .map(|status| {
+              let filename = status.path().unwrap_or("???").to_string();
+              let flags = status.status();
+              let index = if flags.is_index_new() {
+                FileState::New
+              } else if flags.is_index_modified() {
+                FileState::Modified
+              } else if flags.is_index_deleted() {
+                FileState::Deleted
+              } else if flags.is_index_renamed() {
+                FileState::Renamed
+              } else if flags.is_index_typechange() {
+                FileState::TypeChange
+              } else {
+                FileState::Unchanged
+              };
+
+              let worktree = if flags.is_wt_new() {
+                FileState::New
+              } else if flags.is_wt_modified() {
+                FileState::Modified
+              } else if flags.is_wt_deleted() {
+                FileState::Deleted
+              } else if flags.is_wt_renamed() {
+                FileState::Renamed
+              } else if flags.is_wt_typechange() {
+                FileState::TypeChange
+              } else {
+                FileState::Unchanged
+              };
+
+              FileStatus {
+                filename,
+                index,
+                worktree,
+              }
+            })
             .collect();
-          Ok((project, files))
+
+          Ok(ProjectStatus {
+            project_name: project.clone(),
+            branch,
+            files,
+          })
         }))
         .map_err(|err| format_err!("failed to spawn job to run git status"))?;
       handles.push(handle);
     }
 
     let results = pool.run(future::join_all(handles));
-    pb.finish();
+    pb.finish_and_clear();
 
-    // Don't bail until we've listed all of the changes.
-    let mut bail = false;
+    // TODO: Should we be printing the results here, or out in main.rs?
+    let mut errors = Vec::new();
     for result in results {
       match result {
-        Ok((project, files)) => {
-          if !files.is_empty() {
-            println!("{}", project);
-            for file in files {
-              println!("  {}", file);
+        Ok(project_status) => {
+          if project_status.branch == None && project_status.files.is_empty() {
+            continue;
+          }
+
+          let project_line = console::style(format!("project {:64}", project_status.project_name)).bold();
+          let branch = match project_status.branch {
+            Some(branch) => console::style(format!("branch {}", branch)).bold(),
+            None => console::style("(*** NO BRANCH ***)".to_string()).red(),
+          };
+          println!("{}{}", project_line, branch);
+
+          for file in project_status.files {
+            let index = file.index.to_char().to_uppercase().to_string();
+            let worktree = file.worktree.to_char();
+            let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
+            if file.worktree != FileState::Unchanged {
+              line = line.red();
+            } else {
+              line = line.green();
             }
-            println!();
+
+            println!("{}", line)
           }
         }
 
-        Err(err) => {
-          eprintln!("{}", err);
-          bail = true;
-        }
+        Err(err) => errors.push(err),
       }
     }
 
-    if bail {
+    if !errors.is_empty() {
+      for error in errors {
+        eprintln!("{}", error);
+      }
       bail!("failed to git status");
     }
 
