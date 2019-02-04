@@ -119,12 +119,13 @@ impl Tree {
   }
 
   pub fn find_from_path<T: Into<PathBuf>>(path: T) -> Result<Tree, Error> {
-    let mut path: PathBuf = path.into();
+    let original_path: PathBuf = path.into();
+    let mut path: PathBuf = original_path.clone();
     while !path.join(".pore").exists() {
       if let Some(parent) = path.parent() {
         path = parent.to_path_buf();
       } else {
-        bail!("failed to find tree enclosing {:?}", path);
+        bail!("failed to find tree enclosing {:?}", original_path);
       }
     }
 
