@@ -1,0 +1,27 @@
+[package]
+name = "pore"
+version = "0.1.0"
+authors = ["Josh Gao <jmgao@google.com>"]
+edition = "2018"
+license = "Apache-2.0"
+
+[dependencies]
+log = "0.4"
+failure = "0.1"
+futures-preview = "0.3.0-alpha.12"
+
+serde = "1.0"
+serde_derive = "1.0"
+serde-xml-rs = "0.3"
+toml = "0.4"
+
+clap = "2.32"
+maplit = "1.0"
+
+dirs = "1.0"
+shellexpand = "1.0"
+
+git2 = "0.8"
+
+console = "0.7"
+indicatif = "0.11"
