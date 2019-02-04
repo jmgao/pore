@@ -81,11 +81,11 @@ impl Tree {
 
   fn sync_repos(
     &mut self,
+    pool: &mut ThreadPool,
     depot: &Depot,
     remote_config: &RemoteConfig,
     projects: Vec<ProjectInfo>,
     fetch: bool,
-    pool: &mut ThreadPool,
   ) -> Result<(), Error> {
     let remote_config = Arc::new(remote_config.clone());
     let depot: Arc<Depot> = Arc::new(depot.clone());
@@ -208,11 +208,11 @@ impl Tree {
   pub fn sync(
     &mut self,
     config: &Config,
+    mut pool: &mut ThreadPool,
     depot: &Depot,
     sync_under: Option<Vec<&str>>,
     fetch: FetchType,
     checkout: CheckoutType,
-    mut pool: &mut ThreadPool,
   ) -> Result<(), Error> {
     ensure!(sync_under.is_none(), "sync under is currently unimplemented");
 
@@ -224,7 +224,7 @@ impl Tree {
       revision: self.config.branch.clone(),
     }];
 
-    self.sync_repos(depot, &remote_config, manifest, fetch == FetchType::Fetch, &mut pool)?;
+    self.sync_repos(&mut pool, depot, &remote_config, manifest, fetch == FetchType::Fetch)?;
 
     let manifest_path = self.path.join(".pore").join("manifest.xml");
     let manifest = Manifest::parse_file(&manifest_path).context("failed to read manifest")?;
@@ -245,7 +245,7 @@ impl Tree {
       })
       .collect();
 
-    self.sync_repos(depot, &remote_config, projects, fetch != FetchType::NoFetch, &mut pool)?;
+    self.sync_repos(&mut pool, depot, &remote_config, projects, fetch != FetchType::NoFetch)?;
 
     Ok(())
   }

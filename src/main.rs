@@ -88,10 +88,10 @@ fn parse_target(target: &str) -> Result<(String, String), Error> {
 
 fn cmd_clone(
   config: Config,
+  mut pool: &mut ThreadPool,
   target: &str,
   directory: Option<&str>,
   fetch: bool,
-  mut pool: &mut ThreadPool,
 ) -> Result<(), Error> {
   let (remote, branch) = parse_target(target)?;
   let remote_config = config.find_remote(&remote)?;
@@ -111,20 +111,20 @@ fn cmd_clone(
     FetchType::NoFetch
   };
 
-  tree.sync(&config, &depot, None, fetch_type, CheckoutType::NoCheckout, &mut pool)
+  tree.sync(&config, &mut pool, &depot, None, fetch_type, CheckoutType::NoCheckout)
 }
 
 fn cmd_sync(
   config: Config,
+  mut pool: &mut ThreadPool,
   tree: &mut Tree,
   sync_under: Option<Vec<&str>>,
   fetch: FetchType,
   checkout: CheckoutType,
-  mut pool: &mut ThreadPool,
 ) -> Result<(), Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  tree.sync(&config, &depot, sync_under, fetch, checkout, &mut pool)
+  tree.sync(&config, &mut pool, &depot, sync_under, fetch, checkout)
 }
 
 fn main() {
@@ -249,10 +249,10 @@ fn main() {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(
           config,
+          &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           Some("."),
           fetch,
-          &mut pool,
         )
       }
 
@@ -260,10 +260,10 @@ fn main() {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(
           config,
+          &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           submatches.value_of("DIRECTORY"),
           fetch,
-          &mut pool,
         )
       }
 
@@ -273,11 +273,11 @@ fn main() {
         let sync_under = submatches.values_of("PATH").map(|values| values.collect());
         cmd_sync(
           config,
+          &mut pool,
           &mut tree,
           sync_under,
           FetchType::Fetch,
           CheckoutType::NoCheckout,
-          &mut pool,
         )
       }
 
@@ -290,7 +290,7 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let sync_under = submatches.values_of("PATH").map(|values| values.collect());
-        cmd_sync(config, &mut tree, sync_under, fetch, CheckoutType::Checkout, &mut pool)
+        cmd_sync(config, &mut pool, &mut tree, sync_under, fetch, CheckoutType::Checkout)
       }
 
       ("start", Some(submatches)) => unimplemented_subcommand("start"),
