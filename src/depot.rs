@@ -20,6 +20,7 @@ use failure::Error;
 use failure::ResultExt;
 
 use super::config;
+use super::util;
 
 #[derive(Clone, Debug)]
 pub struct Depot {
@@ -198,20 +199,7 @@ impl Depot {
     remote: T,
     revision: U,
   ) -> Result<(), Error> {
-    let remote: &str = remote.as_ref();
-    let revision: &str = revision.as_ref();
-
-    // Revision can point either directly to a git hash, or to a remote branch.
-    // Try the git hash first.
-    let head = match repo.revparse_single(&revision) {
-      Ok(head) => head,
-      Err(err) => {
-        let spec = format!("{}/{}", remote, revision);
-        repo
-          .revparse_single(&spec)
-          .context(format!("failed to find commit {} in {:?}", spec, repo.path()))?
-      }
-    };
+    let head = util::parse_revision(&repo, &remote, &revision)?;
 
     repo
       .set_head_detached(head.id())

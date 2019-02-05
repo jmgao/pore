@@ -18,7 +18,7 @@ use std::fmt::Debug;
 use std::io;
 use std::path::Path;
 
-use failure::Error;
+use failure::{Error, ResultExt};
 
 pub fn assert_empty_directory<T: AsRef<Path> + Debug>(directory_path: T) -> Result<(), Error> {
   match std::fs::read_dir(&directory_path) {
@@ -38,4 +38,27 @@ pub fn assert_empty_directory<T: AsRef<Path> + Debug>(directory_path: T) -> Resu
   }
 
   Ok(())
+}
+
+pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
+  repo: &git2::Repository,
+  remote: T,
+  revision: U,
+) -> Result<git2::Object, Error> {
+  let remote: &str = remote.as_ref();
+  let revision: &str = revision.as_ref();
+
+  // Revision can point either directly to a git hash, or to a remote branch.
+  // Try the git hash first.
+  let object = match repo.revparse_single(&revision) {
+    Ok(obj) => obj,
+    Err(err) => {
+      let spec = format!("{}/{}", remote, revision);
+      repo
+        .revparse_single(&spec)
+        .context(format!("failed to find commit {} in {:?}", spec, repo.path()))?
+    }
+  };
+
+  Ok(object)
 }
