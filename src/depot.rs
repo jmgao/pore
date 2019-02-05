@@ -191,24 +191,14 @@ impl Depot {
       .context("failed to set remote pushurl")?;
 
     self.update_remote_refs(&remote_config, project, &path)?;
-    Depot::checkout_repo(&repo, &remote_config.name, branch)
-  }
 
-  pub fn checkout_repo<T: AsRef<str>, U: AsRef<str>>(
-    repo: &git2::Repository,
-    remote: T,
-    revision: U,
-  ) -> Result<(), Error> {
-    let head = util::parse_revision(&repo, &remote, &revision)?;
-
+    let head = util::parse_revision(&repo, &remote_config.name, &branch)?;
+    repo
+      .checkout_tree(&head, None)
+      .context(format!("failed to checkout HEAD at {:?}", repo.path()))?;
     repo
       .set_head_detached(head.id())
-      .context(format!("failed to set HEAD at {:?}", repo.path()))?;
-
-    repo
-      .checkout_head(None)
-      .context(format!("failed to checkout HEAD at {:?}", repo.path()))?;
-
+      .context(format!("failed to set HEAD to {:?}", repo.path()))?;
     Ok(())
   }
 

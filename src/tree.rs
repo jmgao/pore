@@ -263,22 +263,59 @@ impl Tree {
       let pb = Arc::clone(&pb);
 
       let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<(), Error> {
+        .spawn_with_handle(future::lazy(move |_| -> Result<Option<(String, Error)>, Error> {
           let project_name = &project_info.project_name;
           let revision = &project_info.revision;
 
-          if project_path.exists() {
+          let result = if project_path.exists() {
             depot.update_remote_refs(&remote_config, &project_name, &project_path)?;
             let repo =
               git2::Repository::open(&project_path).context(format!("failed to open repository {:?}", project_path))?;
-            Depot::checkout_repo(&repo, &remote_config.name, &revision)?;
+
+            // There's two things to be concerned about here:
+            //  - HEAD might be attached to a branch
+            //  - the repo might have uncommitted changes in the index or worktree
+            //
+            // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
+            // try to perform the equivalent of `git pull --rebase`.
+            //
+            // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
+            if !repo.head_detached()? {
+              let head = repo.head()?;
+              let branch_name = head.shorthand().unwrap();
+              Some((
+                project_info.project_path.to_string(),
+                format_err!("currently on a branch ({})", branch_name),
+              ))
+            } else {
+              let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
+                .context(format!("failed to find revision to sync to in {}", project_name))?;
+
+              let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+              match probe {
+                Ok(()) => {
+                  repo.checkout_tree(&new_head, None).context(format!(
+                    "failed to checkout to {:?} in {:?}",
+                    new_head, project_info.project_path
+                  ))?;
+
+                  repo
+                    .set_head_detached(new_head.id())
+                    .context(format!("failed to detach HEAD in {:?}", project_info.project_path))?;
+
+                  None
+                }
+                Err(err) => Some((project_info.project_path.to_string(), err.into())),
+              }
+            }
           } else {
             depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
-          }
+            None
+          };
 
           pb.set_message(&project_info.project_name);
           pb.inc(1);
-          Ok(())
+          Ok(result)
         }))
         .map_err(|err| format_err!("failed to spawn job to checkout repo"))?;
       checkout_handles.push(handle);
@@ -287,16 +324,18 @@ impl Tree {
     let checkout_handles = pool.run(future::join_all(checkout_handles));
     pb.finish();
 
-    let errors: Vec<_> = checkout_handles
-      .into_iter()
-      .filter(Result::is_err)
-      .map(Result::unwrap_err)
-      .collect();
-    if !errors.is_empty() {
-      for error in &errors {
-        eprintln!("{}", error);
+    for handle in checkout_handles {
+      match handle {
+        Ok(None) => {}
+        Ok(Some((project_path, error))) => {
+          println!("{}", console::style(project_path).bold());
+          println!("{}", console::style(format!("  {}", error)).red());
+        }
+
+        Err(err) => {
+          println!("{}", console::style(err.to_string()).red());
+        }
       }
-      bail!("failed to checkout");
     }
 
     // TODO: Figure out repos that have been removed, and warn about them (or delete them?)
@@ -347,7 +386,6 @@ impl Tree {
       .collect();
 
     self.sync_repos(&mut pool, depot, &remote_config, projects, fetch != FetchType::NoFetch)?;
-
     Ok(())
   }
 
