@@ -240,6 +240,7 @@ impl Tree {
     remote_config: &RemoteConfig,
     projects: Vec<ProjectInfo>,
     fetch: bool,
+    checkout: CheckoutType,
   ) -> Result<(), Error> {
     let remote_config = Arc::new(remote_config.clone());
     let depot: Arc<Depot> = Arc::new(depot.clone());
@@ -293,143 +294,145 @@ impl Tree {
       }
     }
 
-    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-    pb.set_style(style.clone());
-    pb.set_prefix("checkout");
-    pb.enable_steady_tick(1000);
-    let mut checkout_handles = Vec::new();
-    for project in &projects {
-      let depot = Arc::clone(&depot);
-      let remote_config = Arc::clone(&remote_config);
-      let project_info = Arc::clone(&project);
-      let project_path = self.path.join(&project.project_path);
-      let pb = Arc::clone(&pb);
+    if checkout == CheckoutType::Checkout {
+      let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
+      pb.set_style(style.clone());
+      pb.set_prefix("checkout");
+      pb.enable_steady_tick(1000);
+      let mut checkout_handles = Vec::new();
+      for project in &projects {
+        let depot = Arc::clone(&depot);
+        let remote_config = Arc::clone(&remote_config);
+        let project_info = Arc::clone(&project);
+        let project_path = self.path.join(&project.project_path);
+        let pb = Arc::clone(&pb);
 
-      let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<Option<(String, Error)>, Error> {
-          let project_name = &project_info.project_name;
-          let revision = &project_info.revision;
+        let handle = pool
+          .spawn_with_handle(future::lazy(move |_| -> Result<Option<(String, Error)>, Error> {
+            let project_name = &project_info.project_name;
+            let revision = &project_info.revision;
 
-          let result = if project_path.exists() {
-            depot.update_remote_refs(&remote_config, &project_name, &project_path)?;
-            let repo =
-              git2::Repository::open(&project_path).context(format!("failed to open repository {:?}", project_path))?;
+            let result = if project_path.exists() {
+              depot.update_remote_refs(&remote_config, &project_name, &project_path)?;
+              let repo = git2::Repository::open(&project_path)
+                .context(format!("failed to open repository {:?}", project_path))?;
 
-            // There's two things to be concerned about here:
-            //  - HEAD might be attached to a branch
-            //  - the repo might have uncommitted changes in the index or worktree
-            //
-            // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
-            // try to perform the equivalent of `git pull --rebase`.
-            //
-            // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
-            if !repo.head_detached()? {
-              let head = repo.head()?;
-              let branch_name = head.shorthand().unwrap();
-              Some((
-                project_info.project_path.to_string(),
-                format_err!("currently on a branch ({})", branch_name),
-              ))
-            } else {
-              let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
-                .context(format!("failed to find revision to sync to in {}", project_name))?;
-
-              let current_head = repo
-                .head()
-                .context(format!("failed to get HEAD in {:?}", project_info.project_path))?;
-
-              // Current head can't be a symbolic reference, because it has to be detached.
-              let current_head = current_head
-                .target()
-                .ok_or_else(|| format_err!("failed to get target of HEAD in {:?}", project_info.project_path))?;
-
-              // Only do anything if we're not already on the new HEAD.
-              if current_head != new_head.id() {
-                let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
-                match probe {
-                  Ok(()) => {
-                    repo.checkout_tree(&new_head, None).context(format!(
-                      "failed to checkout to {:?} in {:?}",
-                      new_head, project_info.project_path
-                    ))?;
-
-                    repo
-                      .set_head_detached(new_head.id())
-                      .context(format!("failed to detach HEAD in {:?}", project_info.project_path))?;
-
-                    None
-                  }
-                  Err(err) => Some((project_info.project_path.to_string(), err.into())),
-                }
+              // There's two things to be concerned about here:
+              //  - HEAD might be attached to a branch
+              //  - the repo might have uncommitted changes in the index or worktree
+              //
+              // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
+              // try to perform the equivalent of `git pull --rebase`.
+              //
+              // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
+              if !repo.head_detached()? {
+                let head = repo.head()?;
+                let branch_name = head.shorthand().unwrap();
+                Some((
+                  project_info.project_path.to_string(),
+                  format_err!("currently on a branch ({})", branch_name),
+                ))
               } else {
-                None
+                let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
+                  .context(format!("failed to find revision to sync to in {}", project_name))?;
+
+                let current_head = repo
+                  .head()
+                  .context(format!("failed to get HEAD in {:?}", project_info.project_path))?;
+
+                // Current head can't be a symbolic reference, because it has to be detached.
+                let current_head = current_head
+                  .target()
+                  .ok_or_else(|| format_err!("failed to get target of HEAD in {:?}", project_info.project_path))?;
+
+                // Only do anything if we're not already on the new HEAD.
+                if current_head != new_head.id() {
+                  let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+                  match probe {
+                    Ok(()) => {
+                      repo.checkout_tree(&new_head, None).context(format!(
+                        "failed to checkout to {:?} in {:?}",
+                        new_head, project_info.project_path
+                      ))?;
+
+                      repo
+                        .set_head_detached(new_head.id())
+                        .context(format!("failed to detach HEAD in {:?}", project_info.project_path))?;
+
+                      None
+                    }
+                    Err(err) => Some((project_info.project_path.to_string(), err.into())),
+                  }
+                } else {
+                  None
+                }
               }
+            } else {
+              depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
+              None
+            };
+
+            pb.set_message(&project_info.project_name);
+            pb.inc(1);
+            Ok(result)
+          }))
+          .map_err(|err| format_err!("failed to spawn job to checkout repo"))?;
+        checkout_handles.push(handle);
+      }
+
+      let checkout_handles = pool.run(future::join_all(checkout_handles));
+      pb.finish();
+
+      for handle in checkout_handles {
+        match handle {
+          Ok(None) => {}
+          Ok(Some((project_path, error))) => {
+            println!("{}", console::style(project_path).bold());
+            println!("{}", console::style(format!("  {}", error)).red());
+          }
+
+          Err(err) => {
+            println!("{}", console::style(err.to_string()).red());
+          }
+        }
+      }
+
+      // Perform linkfiles/copyfiles.
+      for project in &projects {
+        // src is the target of the link/the file that is copied, and is a relative path from the project.
+        // dst is the location of the link/copy that the rule creates, and is a relative path from the tree root.
+        for op in &project.file_ops {
+          let src_path = self.path.join(&project.project_path).join(&op.src);
+          let dst_path = self.path.join(&op.dst);
+
+          if let Err(err) = std::fs::remove_file(&dst_path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+              bail!("failed to unlink file {:?}: {}", dst_path, err);
             }
-          } else {
-            depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
-            None
-          };
-
-          pb.set_message(&project_info.project_name);
-          pb.inc(1);
-          Ok(result)
-        }))
-        .map_err(|err| format_err!("failed to spawn job to checkout repo"))?;
-      checkout_handles.push(handle);
-    }
-
-    let checkout_handles = pool.run(future::join_all(checkout_handles));
-    pb.finish();
-
-    for handle in checkout_handles {
-      match handle {
-        Ok(None) => {}
-        Ok(Some((project_path, error))) => {
-          println!("{}", console::style(project_path).bold());
-          println!("{}", console::style(format!("  {}", error)).red());
-        }
-
-        Err(err) => {
-          println!("{}", console::style(err.to_string()).red());
-        }
-      }
-    }
-
-    // Perform linkfiles/copyfiles.
-    for project in &projects {
-      // src is the target of the link/the file that is copied, and is a relative path from the project.
-      // dst is the location of the link/copy that the rule creates, and is a relative path from the tree root.
-      for op in &project.file_ops {
-        let src_path = self.path.join(&project.project_path).join(&op.src);
-        let dst_path = self.path.join(&op.dst);
-
-        if let Err(err) = std::fs::remove_file(&dst_path) {
-          if err.kind() != std::io::ErrorKind::NotFound {
-            bail!("failed to unlink file {:?}: {}", dst_path, err);
-          }
-        }
-
-        match op.operation_type {
-          FileOperationType::Link => {
-            // repo makes the symlinks as relative symlinks.
-            let base = dst_path
-              .parent()
-              .ok_or_else(|| format_err!("linkfile destination is the root?"))?;
-            let target = pathdiff::diff_paths(&src_path, &base)
-              .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
-            std::os::unix::fs::symlink(target, dst_path)?;
           }
 
-          FileOperationType::Copy => {
-            std::fs::copy(src_path, dst_path)?;
+          match op.operation_type {
+            FileOperationType::Link => {
+              // repo makes the symlinks as relative symlinks.
+              let base = dst_path
+                .parent()
+                .ok_or_else(|| format_err!("linkfile destination is the root?"))?;
+              let target = pathdiff::diff_paths(&src_path, &base)
+                .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
+              std::os::unix::fs::symlink(target, dst_path)?;
+            }
+
+            FileOperationType::Copy => {
+              std::fs::copy(src_path, dst_path)?;
+            }
           }
         }
       }
-    }
 
-    // TODO: Figure out repos that have been removed, and warn about them (or delete them?)
-    self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
-    self.write_config().context("failed to write tree config")?;
+      // TODO: Figure out repos that have been removed, and warn about them (or delete them?)
+      self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
+      self.write_config().context("failed to write tree config")?;
+    }
 
     Ok(())
   }
@@ -454,7 +457,14 @@ impl Tree {
       file_ops: Vec::new(),
     }];
 
-    self.sync_repos(&mut pool, depot, &remote_config, manifest, fetch == FetchType::Fetch)?;
+    self.sync_repos(
+      &mut pool,
+      depot,
+      &remote_config,
+      manifest,
+      fetch == FetchType::Fetch,
+      checkout,
+    )?;
 
     let manifest = self.read_manifest()?;
 
@@ -475,7 +485,14 @@ impl Tree {
       })
       .collect();
 
-    self.sync_repos(&mut pool, depot, &remote_config, projects, fetch != FetchType::NoFetch)?;
+    self.sync_repos(
+      &mut pool,
+      depot,
+      &remote_config,
+      projects,
+      fetch != FetchType::NoFetch,
+      checkout,
+    )?;
     Ok(())
   }
 
