@@ -16,7 +16,7 @@
 
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename = "manifest", deny_unknown_fields)]
 pub struct Manifest {
   #[serde(rename = "remote")]
@@ -34,7 +34,7 @@ pub struct Manifest {
   pub repohooks: RepoHooks,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Remote {
   pub name: String,
@@ -43,7 +43,7 @@ pub struct Remote {
   pub review: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Default {
   pub revision: Option<String>,
@@ -56,13 +56,13 @@ pub struct Default {
   pub syncc: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestServer {
   pub url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Project {
   pub name: String,
@@ -88,7 +88,7 @@ impl Project {
   }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Copyfile {
   pub src: String,
@@ -97,7 +97,7 @@ pub struct Copyfile {
   pub dst: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Linkfile {
   pub src: String,
@@ -106,7 +106,7 @@ pub struct Linkfile {
   pub dst: String,
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RepoHooks {
   #[serde(rename = "in-project")]
