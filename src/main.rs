@@ -113,7 +113,7 @@ fn cmd_clone(
     FetchType::NoFetch
   };
 
-  tree.sync(&config, &mut pool, &depot, None, fetch_type, CheckoutType::NoCheckout)
+  tree.sync(&config, &mut pool, &depot, None, fetch_type, CheckoutType::Checkout)
 }
 
 fn cmd_sync(
