@@ -138,7 +138,7 @@ impl Depot {
       Ok(remote) => {
         objects_repo.remote_set_url(&remote_config.name, &repo_url)?;
         objects_repo.find_remote(&remote_config.name).unwrap()
-      },
+      }
       Err(err) => objects_repo
         .remote(&remote_config.name, &repo_url)
         .context("failed to create remote")?,
