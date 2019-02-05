@@ -328,21 +328,35 @@ impl Tree {
               let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
                 .context(format!("failed to find revision to sync to in {}", project_name))?;
 
-              let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
-              match probe {
-                Ok(()) => {
-                  repo.checkout_tree(&new_head, None).context(format!(
-                    "failed to checkout to {:?} in {:?}",
-                    new_head, project_info.project_path
-                  ))?;
+              let current_head = repo
+                .head()
+                .context(format!("failed to get HEAD in {:?}", project_info.project_path))?;
 
-                  repo
-                    .set_head_detached(new_head.id())
-                    .context(format!("failed to detach HEAD in {:?}", project_info.project_path))?;
+              // Current head can't be a symbolic reference, because it has to be detached.
+              let current_head = current_head
+                .target()
+                .ok_or_else(|| format_err!("failed to get target of HEAD in {:?}", project_info.project_path))?;
 
-                  None
+              // Only do anything if we're not already on the new HEAD.
+              if current_head != new_head.id() {
+                let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+                match probe {
+                  Ok(()) => {
+                    repo.checkout_tree(&new_head, None).context(format!(
+                      "failed to checkout to {:?} in {:?}",
+                      new_head, project_info.project_path
+                    ))?;
+
+                    repo
+                      .set_head_detached(new_head.id())
+                      .context(format!("failed to detach HEAD in {:?}", project_info.project_path))?;
+
+                    None
+                  }
+                  Err(err) => Some((project_info.project_path.to_string(), err.into())),
                 }
-                Err(err) => Some((project_info.project_path.to_string(), err.into())),
+              } else {
+                None
               }
             }
           } else {
