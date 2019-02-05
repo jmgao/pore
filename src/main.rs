@@ -211,6 +211,10 @@ fn main() {
          defaults to all repositories in the tree if unspecified"
       )
     )
+
+    (@subcommand config =>
+      (about: "prints the default configuration file")
+    )
   );
 
   let matches = app.get_matches();
@@ -331,6 +335,11 @@ fn main() {
         let tree = Tree::find_from_path(cwd.clone())?;
         let status_under = submatches.values_of("PATH").map(|values| values.collect());
         tree.status(config, &mut pool, status_under)
+      }
+
+      ("config", Some(submatches)) => {
+        println!("{}", toml::to_string_pretty(&Config::default())?);
+        Ok(0)
       }
 
       _ => {
