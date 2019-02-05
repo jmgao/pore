@@ -241,7 +241,7 @@ impl Tree {
     projects: Vec<ProjectInfo>,
     fetch: bool,
     checkout: CheckoutType,
-  ) -> Result<(), Error> {
+  ) -> Result<i32, Error> {
     let remote_config = Arc::new(remote_config.clone());
     let depot: Arc<Depot> = Arc::new(depot.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
@@ -434,7 +434,7 @@ impl Tree {
       self.write_config().context("failed to write tree config")?;
     }
 
-    Ok(())
+    Ok(0)
   }
 
   pub fn sync(
@@ -445,7 +445,7 @@ impl Tree {
     sync_under: Option<Vec<&str>>,
     fetch: FetchType,
     checkout: CheckoutType,
-  ) -> Result<(), Error> {
+  ) -> Result<i32, Error> {
     ensure!(sync_under.is_none(), "limiting sync by path is currently unimplemented");
 
     // Sync the manifest repo first.
@@ -493,10 +493,10 @@ impl Tree {
       fetch != FetchType::NoFetch,
       checkout,
     )?;
-    Ok(())
+    Ok(0)
   }
 
-  pub fn status(&self, config: Config, pool: &mut ThreadPool, status_under: Option<Vec<&str>>) -> Result<(), Error> {
+  pub fn status(&self, config: Config, pool: &mut ThreadPool, status_under: Option<Vec<&str>>) -> Result<i32, Error> {
     ensure!(
       status_under.is_none(),
       "limiting status by path is currently unimplemented"
@@ -592,12 +592,15 @@ impl Tree {
 
     // TODO: Should we be printing the results here, or out in main.rs?
     let mut errors = Vec::new();
+    let mut dirty = false;
     for result in results {
       match result {
         Ok(project_status) => {
           if project_status.branch == None && project_status.files.is_empty() {
             continue;
           }
+
+          dirty = true;
 
           let project_line = console::style(format!("project {:64}", project_status.project_name)).bold();
           let branch = match project_status.branch {
@@ -631,7 +634,11 @@ impl Tree {
       bail!("failed to git status");
     }
 
-    Ok(())
+    if dirty {
+      Ok(1)
+    } else {
+      Ok(0)
+    }
   }
 
   pub fn start(
@@ -641,7 +648,7 @@ impl Tree {
     remote_config: &RemoteConfig,
     branch_name: &str,
     directory: &Path,
-  ) -> Result<(), Error> {
+  ) -> Result<i32, Error> {
     let flags = git2::RepositoryOpenFlags::empty();
     let repo = git2::Repository::open_ext(&directory, flags, &self.path).context("failed to find git repository")?;
 
@@ -687,6 +694,6 @@ impl Tree {
       .set_head(&format!("refs/heads/{}", branch_name))
       .context(format_err!("failed to set HEAD to {}", branch_name))?;
 
-    Ok(())
+    Ok(0)
   }
 }

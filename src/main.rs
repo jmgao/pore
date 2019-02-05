@@ -94,7 +94,7 @@ fn cmd_clone(
   target: &str,
   directory: Option<&str>,
   fetch: bool,
-) -> Result<(), Error> {
+) -> Result<i32, Error> {
   let (remote, branch) = parse_target(target)?;
   let remote_config = config.find_remote(&remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
@@ -123,13 +123,13 @@ fn cmd_sync(
   sync_under: Option<Vec<&str>>,
   fetch: FetchType,
   checkout: CheckoutType,
-) -> Result<(), Error> {
+) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
   tree.sync(&config, &mut pool, &depot, sync_under, fetch, checkout)
 }
 
-fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<(), Error> {
+fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
   tree.start(&config, &depot, &remote_config, branch_name, &directory)
@@ -252,7 +252,7 @@ fn main() {
   }
   .unwrap_or_else(|err| fatal!("failed to create job pool: {}", err));
 
-  let result = || -> Result<(), Error> {
+  let result = || -> Result<i32, Error> {
     match matches.subcommand() {
       ("init", Some(submatches)) => {
         let fetch = !submatches.is_present("LOCAL");
@@ -325,7 +325,7 @@ fn main() {
   }();
 
   match result {
-    Ok(()) => std::process::exit(0),
+    Ok(rc) => std::process::exit(rc),
     Err(err) => {
       let fail = err.as_fail();
       if let Some(cause) = fail.cause() {
