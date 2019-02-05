@@ -59,11 +59,48 @@ pub struct TreeConfig {
   pub projects: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
+enum FileOperationType {
+  Link,
+  Copy,
+}
+
+#[derive(Clone, Debug)]
+struct FileOperation {
+  operation_type: FileOperationType,
+  src: String,
+  dst: String,
+}
+
+impl FileOperation {
+  fn from_manifest_project(project: &manifest::Project) -> Vec<FileOperation> {
+    let mut result = Vec::new();
+    for linkfile in &project.linkfiles {
+      result.push(FileOperation {
+        operation_type: FileOperationType::Link,
+        src: linkfile.src.clone(),
+        dst: linkfile.dst.clone(),
+      });
+    }
+
+    for copyfile in &project.copyfiles {
+      result.push(FileOperation {
+        operation_type: FileOperationType::Copy,
+        src: copyfile.src.clone(),
+        dst: copyfile.dst.clone(),
+      });
+    }
+
+    result
+  }
+}
+
 #[derive(Clone)]
 struct ProjectInfo {
   project_path: String,
   project_name: String,
   revision: String,
+  file_ops: Vec<FileOperation>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -338,6 +375,38 @@ impl Tree {
       }
     }
 
+    // Perform linkfiles/copyfiles.
+    for project in &projects {
+      // src is the target of the link/the file that is copied, and is a relative path from the project.
+      // dst is the location of the link/copy that the rule creates, and is a relative path from the tree root.
+      for op in &project.file_ops {
+        let src_path = self.path.join(&project.project_path).join(&op.src);
+        let dst_path = self.path.join(&op.dst);
+
+        if let Err(err) = std::fs::remove_file(&dst_path) {
+          if err.kind() != std::io::ErrorKind::NotFound {
+            bail!("failed to unlink file {:?}: {}", dst_path, err);
+          }
+        }
+
+        match op.operation_type {
+          FileOperationType::Link => {
+            // repo makes the symlinks as relative symlinks.
+            let base = dst_path
+              .parent()
+              .ok_or_else(|| format_err!("linkfile destination is the root?"))?;
+            let target = pathdiff::diff_paths(&src_path, &base)
+              .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
+            std::os::unix::fs::symlink(target, dst_path)?;
+          }
+
+          FileOperationType::Copy => {
+            std::fs::copy(src_path, dst_path)?;
+          }
+        }
+      }
+    }
+
     // TODO: Figure out repos that have been removed, and warn about them (or delete them?)
     self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
     self.write_config().context("failed to write tree config")?;
@@ -362,6 +431,7 @@ impl Tree {
       project_path: ".pore/manifest".into(),
       project_name: self.config.manifest.clone(),
       revision: self.config.branch.clone(),
+      file_ops: Vec::new(),
     }];
 
     self.sync_repos(&mut pool, depot, &remote_config, manifest, fetch == FetchType::Fetch)?;
@@ -382,6 +452,7 @@ impl Tree {
         project_path: project.path(),
         project_name: project.name.clone(),
         revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
+        file_ops: FileOperation::from_manifest_project(&project),
       })
       .collect();
 

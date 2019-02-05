@@ -37,6 +37,7 @@ extern crate clap;
 extern crate maplit;
 
 extern crate dirs;
+extern crate pathdiff;
 extern crate shellexpand;
 
 extern crate git2;
