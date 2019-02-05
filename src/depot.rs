@@ -135,7 +135,10 @@ impl Depot {
 
     let objects_repo = Depot::open_or_create_bare_repo(&objects_path)?;
     let mut remote = match objects_repo.find_remote(&remote_config.name) {
-      Ok(remote) => remote,
+      Ok(remote) => {
+        objects_repo.remote_set_url(&remote_config.name, &repo_url)?;
+        objects_repo.find_remote(&remote_config.name).unwrap()
+      },
       Err(err) => objects_repo
         .remote(&remote_config.name, &repo_url)
         .context("failed to create remote")?,
