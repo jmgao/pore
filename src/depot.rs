@@ -185,6 +185,9 @@ impl Depot {
         self.refs_mirror(&remote_config.name, project).to_str().unwrap(),
       )
       .context("failed to create remote")?;
+    repo
+      .remote_set_pushurl(&remote_config.name, Some(&format!("{}{}", remote_config.url, project)))
+      .context("failed to set remote pushurl")?;
 
     self.update_remote_refs(&remote_config, project, &path)?;
     Depot::checkout_repo(&repo, &remote_config.name, branch)
