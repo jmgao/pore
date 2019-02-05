@@ -218,6 +218,12 @@ impl Tree {
     Ok(toml::from_str(&text).context("failed to deserialize tree config")?)
   }
 
+  fn read_manifest(&self) -> Result<Manifest, Error> {
+    let manifest_path = self.path.join(".pore").join("manifest.xml");
+    let manifest = Manifest::parse_file(&manifest_path).context("failed to read manifest")?;
+    Ok(manifest)
+  }
+
   fn progress_bar_style(project_count: usize) -> indicatif::ProgressStyle {
     let project_count_digits = project_count.to_string().len();
     let count = "{pos:>".to_owned() + &(6 - project_count_digits).to_string() + "}/{len}";
@@ -450,8 +456,7 @@ impl Tree {
 
     self.sync_repos(&mut pool, depot, &remote_config, manifest, fetch == FetchType::Fetch)?;
 
-    let manifest_path = self.path.join(".pore").join("manifest.xml");
-    let manifest = Manifest::parse_file(&manifest_path).context("failed to read manifest")?;
+    let manifest = self.read_manifest()?;
 
     // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
     let default_revision = manifest
@@ -608,6 +613,62 @@ impl Tree {
       }
       bail!("failed to git status");
     }
+
+    Ok(())
+  }
+
+  pub fn start(
+    &self,
+    config: &Config,
+    depot: &Depot,
+    remote_config: &RemoteConfig,
+    branch_name: &str,
+    directory: &Path,
+  ) -> Result<(), Error> {
+    let flags = git2::RepositoryOpenFlags::empty();
+    let repo = git2::Repository::open_ext(&directory, flags, &self.path).context("failed to find git repository")?;
+
+    // Find the project path.
+    let project_path =
+      pathdiff::diff_paths(repo.path(), &self.path).ok_or_else(|| format_err!("failed to calculate project name"))?;
+
+    // The path we calculated was the path to the .git directory.
+    ensure!(
+      project_path.file_name().unwrap().to_str().unwrap() == ".git",
+      "unexpected project path: {:?}",
+      project_path
+    );
+
+    let project_path = project_path.parent().map(|p| p.to_str().unwrap().to_string());
+    let manifest = self.read_manifest()?;
+    let project = manifest
+      .projects
+      .iter()
+      .find(|project| project.path == project_path)
+      .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
+
+    // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
+    let revision = project.revision.clone().unwrap_or_else(|| {
+      manifest
+        .default
+        .and_then(|def| def.revision)
+        .unwrap_or_else(|| self.config.branch.clone())
+    });
+
+    let object = util::parse_revision(&repo, &remote_config.name, &revision)?;
+    let commit = object.peel_to_commit().context("failed to peel object to commit")?;
+
+    let mut branch = repo
+      .branch(&branch_name, &commit, false)
+      .context(format_err!("failed to create branch {}", branch_name))?;
+    branch
+      .set_upstream(Some(&format!("{}/{}", remote_config.name, revision)))
+      .context("failed to set branch upstream")?;
+
+    repo.checkout_tree(&object, None)?;
+    repo
+      .set_head(&format!("refs/heads/{}", branch_name))
+      .context(format_err!("failed to set HEAD to {}", branch_name))?;
 
     Ok(())
   }

@@ -47,7 +47,7 @@ extern crate indicatif;
 
 use std::io::Write;
 use std::os::unix::fs::symlink;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use failure::Error;
 use failure::ResultExt;
@@ -127,6 +127,12 @@ fn cmd_sync(
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
   tree.sync(&config, &mut pool, &depot, sync_under, fetch, checkout)
+}
+
+fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<(), Error> {
+  let remote_config = config.find_remote(&tree.config.remote)?;
+  let depot = config.find_depot(&remote_config.depot)?;
+  tree.start(&config, &depot, &remote_config, branch_name, &directory)
 }
 
 fn main() {
@@ -296,7 +302,12 @@ fn main() {
         cmd_sync(config, &mut pool, &mut tree, sync_under, fetch, CheckoutType::Checkout)
       }
 
-      ("start", Some(submatches)) => unimplemented_subcommand("start"),
+      ("start", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let branch_name = submatches.value_of("BRANCH").unwrap();
+        cmd_start(config, &mut tree, branch_name, &cwd)
+      }
 
       ("upload", Some(submatches)) => unimplemented_subcommand("upload"),
 
