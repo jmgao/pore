@@ -281,7 +281,7 @@ impl Tree {
 
       if !errors.is_empty() {
         for error in errors {
-          eprintln!("{}", error);
+          eprintln!("{}: {}", error, error.find_root_cause());
         }
         bail!("failed to sync");
       }
