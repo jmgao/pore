@@ -135,6 +135,12 @@ fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Pat
   tree.start(&config, &depot, &remote_config, branch_name, &directory)
 }
 
+fn cmd_prune(config: Config, mut pool: &mut ThreadPool, tree: &mut Tree) -> Result<i32, Error> {
+  let remote_config = config.find_remote(&tree.config.remote)?;
+  let depot = config.find_depot(&remote_config.depot)?;
+  tree.prune(&config, &mut pool, &depot)
+}
+
 fn main() {
   let app = clap_app!(pore =>
     (version: crate_version!())
@@ -194,6 +200,9 @@ fn main() {
     )
     (@subcommand upload =>
       (about: "upload patches to Gerrit")
+    )
+    (@subcommand prune =>
+      (about: "prune branches that have been merged")
     )
     (@subcommand status =>
       (about: "show working tree status across the entire tree")
@@ -310,6 +319,12 @@ fn main() {
       }
 
       ("upload", Some(submatches)) => unimplemented_subcommand("upload"),
+
+      ("prune", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        cmd_prune(config, &mut pool, &mut tree)
+      }
 
       ("status", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;

@@ -107,12 +107,12 @@ impl Depot {
     Ok(())
   }
 
-  fn objects_mirror<T: Into<String>>(&self, project: T) -> PathBuf {
+  pub fn objects_mirror<T: Into<String>>(&self, project: T) -> PathBuf {
     let repo_name: String = project.into() + ".git";
     self.path.join("objects").join(repo_name)
   }
 
-  fn refs_mirror<T: AsRef<str>, U: Into<String>>(&self, remote: T, project: U) -> PathBuf {
+  pub fn refs_mirror<T: AsRef<str>, U: Into<String>>(&self, remote: T, project: U) -> PathBuf {
     let remote: &str = remote.as_ref();
     let repo_name: String = project.into() + ".git";
     self.path.join("refs").join(remote).join(repo_name)

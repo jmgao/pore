@@ -224,6 +224,37 @@ impl Tree {
     Ok(manifest)
   }
 
+  fn collect_manifest_projects(&self, manifest: &Manifest) -> Vec<ProjectInfo> {
+    // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
+    let default_revision = manifest
+      .default
+      .clone()
+      .and_then(|def| def.revision)
+      .unwrap_or_else(|| self.config.branch.clone());
+
+    let projects: Vec<ProjectInfo> = manifest
+      .projects
+      .iter()
+      .map(|project| ProjectInfo {
+        project_path: project.path(),
+        project_name: project.name.clone(),
+        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
+        file_ops: FileOperation::from_manifest_project(&project),
+      })
+      .collect();
+
+    manifest
+      .projects
+      .iter()
+      .map(|project| ProjectInfo {
+        project_path: project.path(),
+        project_name: project.name.clone(),
+        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
+        file_ops: FileOperation::from_manifest_project(&project),
+      })
+      .collect()
+  }
+
   fn progress_bar_style(project_count: usize) -> indicatif::ProgressStyle {
     let project_count_digits = project_count.to_string().len();
     let count = "{pos:>".to_owned() + &(6 - project_count_digits).to_string() + "}/{len}";
@@ -467,24 +498,7 @@ impl Tree {
     )?;
 
     let manifest = self.read_manifest()?;
-
-    // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
-    let default_revision = manifest
-      .default
-      .and_then(|def| def.revision)
-      .unwrap_or_else(|| self.config.branch.clone());
-
-    let projects: Vec<ProjectInfo> = manifest
-      .projects
-      .iter()
-      .map(|project| ProjectInfo {
-        project_path: project.path(),
-        project_name: project.name.clone(),
-        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
-        file_ops: FileOperation::from_manifest_project(&project),
-      })
-      .collect();
-
+    let projects = self.collect_manifest_projects(&manifest);
     self.sync_repos(
       &mut pool,
       depot,
@@ -695,5 +709,125 @@ impl Tree {
       .context(format_err!("failed to set HEAD to {}", branch_name))?;
 
     Ok(0)
+  }
+
+  pub fn prune(&self, config: &Config, pool: &mut ThreadPool, depot: &Depot) -> Result<i32, Error> {
+    let manifest = self.read_manifest()?;
+    let projects = self.collect_manifest_projects(&manifest);
+    let project_count = projects.len();
+
+    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
+    pb.set_style(Tree::progress_bar_style(project_count));
+    pb.set_prefix("pruning");
+
+    let tree_root = Arc::new(self.path.clone());
+
+    struct PruneResult {
+      project_name: String,
+      pruned_branches: Vec<String>,
+    }
+
+    let depot = Arc::new(depot.clone());
+
+    let mut handles = Vec::new();
+    for project in projects {
+      let pb = Arc::clone(&pb);
+      let depot = Arc::clone(&depot);
+      let tree_root = Arc::clone(&tree_root);
+      let handle = pool
+        .spawn_with_handle(future::lazy(move |_| -> Result<Option<PruneResult>, Error> {
+          let path = tree_root.join(&project.project_path);
+          let tree_repo =
+            git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
+
+          let obj_repo_path = depot.objects_mirror(project.project_name);
+          let obj_repo = git2::Repository::open_bare(&obj_repo_path)
+            .context(format!("failed to open object repository {:?}", obj_repo_path))?;
+
+          let branches = tree_repo.branches(Some(git2::BranchType::Local))?;
+
+          let mut detach = None;
+          let mut prunable = Vec::new();
+          for branch in branches {
+            let (branch, _) = branch?;
+            let is_head = branch.is_head();
+            let branch_name = branch
+              .name()?
+              .ok_or_else(|| format_err!("branch has name with invalid UTF-8"))?
+              .to_string();
+            let commit = branch
+              .into_reference()
+              .peel_to_commit()
+              .context("failed to resolve branch to commit")?;
+            let commit_hash = commit.id();
+
+            // Search for this commit in the object repo.
+            if let Ok(commit) = obj_repo.find_commit(commit_hash) {
+              // Found a prunable commit.
+              if is_head {
+                detach = Some(commit_hash);
+              }
+              prunable.push(branch_name);
+            }
+          }
+
+          if let Some(commit) = detach {
+            tree_repo.set_head_detached(commit)?;
+          }
+
+          for branch_name in &prunable {
+            let mut branch = tree_repo.find_branch(&branch_name, git2::BranchType::Local)?;
+            branch
+              .delete()
+              .context(format!("failed to delete branch {}", branch_name))?;
+          }
+
+          pb.set_message(&project.project_path);
+          pb.inc(1);
+
+          Ok(Some(PruneResult {
+            project_name: project.project_path.clone(),
+            pruned_branches: prunable,
+          }))
+        }))
+        .map_err(|err| format_err!("failed to spawn job to fetch"))?;
+      handles.push(handle);
+    }
+
+    let results = pool.run(future::join_all(handles));
+    pb.finish_and_clear();
+
+    let mut errors = Vec::new();
+    let mut pruned = Vec::new();
+
+    for result in results {
+      match result {
+        Ok(Some(result)) => {
+          if !result.pruned_branches.is_empty() {
+            pruned.push(result)
+          }
+        }
+
+        Ok(None) => {}
+        Err(err) => errors.push(err),
+      }
+    }
+
+    for error in &errors {
+      eprintln!("{}", error);
+    }
+
+    for result in pruned {
+      println!("{}", console::style(result.project_name).bold());
+      for branch in result.pruned_branches {
+        println!("  {}", console::style(branch).red());
+      }
+    }
+
+    if errors.is_empty() {
+      Ok(0)
+    } else {
+      Ok(1)
+    }
   }
 }
