@@ -50,10 +50,10 @@ pub struct Default {
   pub remote: Option<String>,
 
   #[serde(rename = "sync-j")]
-  pub syncj: Option<String>,
+  pub sync_j: Option<String>,
 
   #[serde(rename = "sync-c")]
-  pub syncc: Option<String>,
+  pub sync_c: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -69,8 +69,15 @@ pub struct Project {
   pub path: Option<String>,
   pub remote: Option<String>,
   pub revision: Option<String>,
+
+  #[serde(rename = "dest-branch")]
+  pub dest_branch: Option<String>,
+
+
   pub groups: Option<String>,
-  pub syncc: Option<String>,
+
+  #[serde(rename = "sync-c")]
+  pub sync_c: Option<String>,
 
   #[serde(rename = "clone-depth")]
   pub clone_depth: Option<String>,
