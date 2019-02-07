@@ -121,14 +121,14 @@ impl Manifest {
     match serde_xml_rs::from_reader(data) {
       Ok(manifest) => Ok(manifest),
       Err(err) => {
-        let error = std::io::Error::new(std::io::ErrorKind::InvalidData, err.description());
+        let error = std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string());
         Err(error)
       }
     }
   }
 
-  pub fn parse_file(path: &Path) -> std::io::Result<Manifest> {
-    let data = std::fs::read(path)?;
+  pub fn parse_file(path: impl AsRef<Path>) -> std::io::Result<Manifest> {
+    let data = std::fs::read(path.as_ref())?;
     Manifest::parse(&data)
   }
 }
