@@ -25,6 +25,7 @@ use futures::task::SpawnExt;
 use super::*;
 use config::RemoteConfig;
 use depot::Depot;
+use manifest::FileOperation;
 
 pub struct Tree {
   pub path: PathBuf,
@@ -59,48 +60,12 @@ pub struct TreeConfig {
   pub projects: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
-enum FileOperationType {
-  Link,
-  Copy,
-}
-
-#[derive(Clone, Debug)]
-struct FileOperation {
-  operation_type: FileOperationType,
-  src: String,
-  dst: String,
-}
-
-impl FileOperation {
-  fn from_manifest_project(project: &manifest::Project) -> Vec<FileOperation> {
-    let mut result = Vec::new();
-    for linkfile in &project.linkfiles {
-      result.push(FileOperation {
-        operation_type: FileOperationType::Link,
-        src: linkfile.src.clone(),
-        dst: linkfile.dst.clone(),
-      });
-    }
-
-    for copyfile in &project.copyfiles {
-      result.push(FileOperation {
-        operation_type: FileOperationType::Copy,
-        src: copyfile.src.clone(),
-        dst: copyfile.dst.clone(),
-      });
-    }
-
-    result
-  }
-}
-
 #[derive(Clone)]
 struct ProjectInfo {
   project_path: String,
   project_name: String,
   revision: String,
-  file_ops: Vec<FileOperation>,
+  file_ops: Vec<manifest::FileOperation>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -228,29 +193,29 @@ impl Tree {
     // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
     let default_revision = manifest
       .default
-      .clone()
-      .and_then(|def| def.revision)
+      .as_ref()
+      .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
     let projects: Vec<ProjectInfo> = manifest
       .projects
       .iter()
-      .map(|project| ProjectInfo {
+      .map(|(project_path, project)| ProjectInfo {
         project_path: project.path(),
         project_name: project.name.clone(),
         revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
-        file_ops: FileOperation::from_manifest_project(&project),
+        file_ops: project.file_operations.clone(),
       })
       .collect();
 
     manifest
       .projects
       .iter()
-      .map(|project| ProjectInfo {
-        project_path: project.path(),
+      .map(|(project_path, project)| ProjectInfo {
+        project_path: project_path.to_str().expect("project path not UTF-8").into(),
         project_name: project.name.clone(),
         revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
-        file_ops: FileOperation::from_manifest_project(&project),
+        file_ops: project.file_operations.clone(),
       })
       .collect()
   }
@@ -433,8 +398,8 @@ impl Tree {
         // src is the target of the link/the file that is copied, and is a relative path from the project.
         // dst is the location of the link/copy that the rule creates, and is a relative path from the tree root.
         for op in &project.file_ops {
-          let src_path = self.path.join(&project.project_path).join(&op.src);
-          let dst_path = self.path.join(&op.dst);
+          let src_path = self.path.join(&project.project_path).join(&op.src());
+          let dst_path = self.path.join(&op.dst());
 
           if let Err(err) = std::fs::remove_file(&dst_path) {
             if err.kind() != std::io::ErrorKind::NotFound {
@@ -442,8 +407,8 @@ impl Tree {
             }
           }
 
-          match op.operation_type {
-            FileOperationType::Link => {
+          match op {
+            FileOperation::LinkFile { .. } => {
               // repo makes the symlinks as relative symlinks.
               let base = dst_path
                 .parent()
@@ -453,7 +418,7 @@ impl Tree {
               std::os::unix::fs::symlink(target, dst_path)?;
             }
 
-            FileOperationType::Copy => {
+            FileOperation::CopyFile { .. } => {
               std::fs::copy(src_path, dst_path)?;
             }
           }
@@ -677,12 +642,14 @@ impl Tree {
       project_path
     );
 
-    let project_path = project_path.parent().map(|p| p.to_str().unwrap().to_string());
+    let project_path = project_path
+      .parent()
+      .ok_or_else(|| format_err!("invalid project path"))?;
+
     let manifest = self.read_manifest()?;
     let project = manifest
       .projects
-      .iter()
-      .find(|project| project.path == project_path)
+      .get(project_path)
       .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
 
     // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?

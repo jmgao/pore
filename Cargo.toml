@@ -12,8 +12,8 @@ futures-preview = "0.3.0-alpha.12"
 
 serde = "1.0"
 serde_derive = "1.0"
-serde-xml-rs = "0.3"
 toml = "0.4"
+quick-xml = "0.13.2"
 
 clap = "2.32"
 maplit = "1.0"

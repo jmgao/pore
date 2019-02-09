@@ -22,28 +22,14 @@ extern crate log;
 #[macro_use]
 extern crate failure;
 
-extern crate futures;
-
 #[macro_use]
 extern crate serde_derive;
-extern crate serde;
-extern crate serde_xml_rs;
-extern crate toml;
 
 #[macro_use]
 extern crate clap;
 
 #[macro_use]
 extern crate maplit;
-
-extern crate dirs;
-extern crate pathdiff;
-extern crate shellexpand;
-
-extern crate git2;
-
-extern crate console;
-extern crate indicatif;
 
 use std::io::Write;
 use std::os::unix::fs::symlink;
