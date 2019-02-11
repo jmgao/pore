@@ -147,18 +147,17 @@ impl Depot {
     // Use libgit2 when we can, because it's significantly faster than shelling out to git.
     let parsed_url = url::Url::parse(&repo_url)?;
     let scheme = parsed_url.scheme();
-    if scheme == "git" || scheme == "https" || scheme == "http" || scheme == "ssh" || scheme == "" {
+    let mut use_git2 = scheme == "git" || scheme == "https" || scheme == "http" || scheme == "ssh" || scheme == "";
+    if depth.is_some() {
+      use_git2 = false;
+    }
+
+    if use_git2 {
       let mut fetch_opts = git2::FetchOptions::new();
       fetch_opts
         .prune(git2::FetchPrune::Off)
         .update_fetchhead(true)
         .download_tags(git2::AutotagOption::None);
-
-      if let Some(depth) = depth {
-        // libgit2 doesn't support shallow clones.
-        // TODO: Switch to executing git directly?
-        warn!("fetch depth currently ignored");
-      }
 
       remote
         .fetch(&[branch], Some(&mut fetch_opts), None)
@@ -172,6 +171,11 @@ impl Depot {
         .arg(&remote_config.name)
         .arg(&branch)
         .arg("--no-tags");
+
+      if let Some(depth) = depth {
+        cmd.arg("--depth");
+        cmd.arg(depth.to_string());
+      }
 
       let git_output = cmd.output().context("failed to spawn git fetch")?;
       if !git_output.status.success() {
