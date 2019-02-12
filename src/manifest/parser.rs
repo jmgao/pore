@@ -80,6 +80,11 @@ fn parse_manifest(event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result<
         match tag_name {
           b"project" => {
             let project = parse_project(&e, &mut reader, true)?;
+            let path = PathBuf::from(project.path());
+            if manifest.projects.contains_key(&path) {
+              bail!("duplicate project {:?}", path);
+            }
+            manifest.projects.insert(path, project);
           }
 
           _ => bail!(
