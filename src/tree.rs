@@ -837,10 +837,14 @@ impl Tree {
       let handle = pool
         .spawn_with_handle(future::lazy(move |_| -> Result<CommandResult, Error> {
           let path = tree_root.join(&project.project_path);
+          let rel_to_root = pathdiff::diff_paths(&tree_root, &path)
+            .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
 
           let result = std::process::Command::new("sh")
             .arg("-c")
             .arg(command.deref())
+            .env("PORE_ROOT", tree_root.as_os_str())
+            .env("PORE_ROOT_REL", rel_to_root.as_os_str())
             .current_dir(&path)
             .output()?;
 

@@ -23,6 +23,9 @@ extern crate log;
 extern crate failure;
 
 #[macro_use]
+extern crate indoc;
+
+#[macro_use]
 extern crate serde_derive;
 
 #[macro_use]
@@ -211,6 +214,13 @@ fn main() {
     )
     (@subcommand forall =>
       (about: "run a command in each project in the tree")
+      (after_help: indoc!("
+        Commands will be run with the current working directory inside each project,
+        and with the following environment variables defined:
+
+          $PORE_ROOT       absolute path of the root of the tree
+          $PORE_ROOT_REL   relative path from the project to the root of the tree"
+      ))
       (@arg PATH: ...
          "path(s) beneath which to run commands\n\
          defaults to all repositories in the tree if unspecified"
