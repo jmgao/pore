@@ -147,10 +147,8 @@ impl Depot {
     // Use libgit2 when we can, because it's significantly faster than shelling out to git.
     let parsed_url = url::Url::parse(&repo_url)?;
     let scheme = parsed_url.scheme();
-    let mut use_git2 = scheme == "git" || scheme == "https" || scheme == "http" || scheme == "ssh" || scheme == "";
-    if depth.is_some() {
-      use_git2 = false;
-    }
+    let scheme_supported = scheme == "git" || scheme == "https" || scheme == "http" || scheme == "ssh" || scheme == "";
+    let use_git2 = scheme_supported && depth.is_none();
 
     if use_git2 {
       let mut fetch_opts = git2::FetchOptions::new();
