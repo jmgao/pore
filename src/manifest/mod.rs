@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use failure::{Error, ResultExt};
@@ -24,7 +24,7 @@ mod parser;
 #[derive(Default, Debug)]
 pub struct Manifest {
   pub remotes: HashMap<String, Remote>,
-  pub projects: HashMap<PathBuf, Project>,
+  pub projects: BTreeMap<PathBuf, Project>,
   pub default: Option<Default>,
   pub manifest_server: Option<ManifestServer>,
   pub repohooks: Option<RepoHooks>,
