@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -60,7 +61,7 @@ pub struct TreeConfig {
   pub projects: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ProjectInfo {
   project_path: String,
   project_name: String,
@@ -796,5 +797,97 @@ impl Tree {
     } else {
       Ok(1)
     }
+  }
+
+  pub fn forall(
+    &self,
+    config: &Config,
+    pool: &mut ThreadPool,
+    forall_under: Option<Vec<&str>>,
+    command: &str,
+  ) -> Result<i32, Error> {
+    ensure!(
+      forall_under.is_none(),
+      "limiting forall by path is currently unimplemented"
+    );
+
+    let manifest = self.read_manifest()?;
+    let projects = self.collect_manifest_projects(&manifest);
+    let project_count = projects.len();
+
+    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
+    pb.set_style(Tree::progress_bar_style(project_count));
+    pb.set_prefix("forall");
+
+    let tree_root = Arc::new(self.path.clone());
+    let command = Arc::new(command.to_string());
+    let mut handles = Vec::new();
+
+    struct CommandResult {
+      project_path: String,
+      rc: i32,
+      output: Vec<u8>,
+    }
+
+    for project in projects {
+      let pb = Arc::clone(&pb);
+      let tree_root = Arc::clone(&tree_root);
+      let command = Arc::clone(&command);
+
+      let handle = pool
+        .spawn_with_handle(future::lazy(move |_| -> Result<CommandResult, Error> {
+          let path = tree_root.join(&project.project_path);
+
+          let result = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command.deref())
+            .current_dir(&path)
+            .output()?;
+
+          // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
+          //       stdout and stderr being the same pipe, to order their output chronologically.
+          let output = result.stdout;
+          let rc = result.status.code().unwrap();
+
+          pb.set_message(&project.project_path);
+          pb.inc(1);
+
+          Ok(CommandResult {
+            project_path: project.project_path.clone(),
+            rc,
+            output,
+          })
+        }))
+        .map_err(|err| format_err!("failed to spawn job"))?;
+
+      handles.push(handle);
+    }
+
+    let results = pool.run(future::join_all(handles));
+    pb.finish_and_clear();
+
+    let mut rc = 0;
+    for result in results {
+      let result = result?;
+      if result.rc == 0 {
+        println!("{}", console::style(result.project_path).bold());
+      } else {
+        println!(
+          "{} (rc = {})",
+          console::style(result.project_path).red().bold(),
+          result.rc
+        );
+        rc = result.rc;
+      }
+      let lines = result.output.split(|&c| c == b'\n');
+      for line in lines {
+        let mut stdout = std::io::stdout();
+        stdout.write_all(b"  ")?;
+        stdout.write_all(line)?;
+        stdout.write_all(b"\n")?;
+      }
+    }
+
+    Ok(rc)
   }
 }

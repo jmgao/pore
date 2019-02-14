@@ -129,6 +129,16 @@ fn cmd_prune(config: Config, mut pool: &mut ThreadPool, tree: &mut Tree) -> Resu
   tree.prune(&config, &mut pool, &depot)
 }
 
+fn cmd_forall(
+  config: Config,
+  mut pool: &mut ThreadPool,
+  tree: &mut Tree,
+  forall_under: Option<Vec<&str>>,
+  command: &str,
+) -> Result<i32, Error> {
+  tree.forall(&config, &mut pool, forall_under, command)
+}
+
 fn main() {
   let app = clap_app!(pore =>
     (version: crate_version!())
@@ -197,6 +207,16 @@ fn main() {
       (@arg PATH: ...
         "path(s) beneath which to calculate status\n\
          defaults to all repositories in the tree if unspecified"
+      )
+    )
+    (@subcommand forall =>
+      (about: "run a command in each project in the tree")
+      (@arg PATH: ...
+         "path(s) beneath which to run commands\n\
+         defaults to all repositories in the tree if unspecified"
+      )
+      (@arg COMMAND: -c +takes_value +required
+        "command to run."
       )
     )
 
@@ -329,6 +349,16 @@ fn main() {
         let tree = Tree::find_from_path(cwd.clone())?;
         let status_under = submatches.values_of("PATH").map(|values| values.collect());
         tree.status(config, &mut pool, status_under)
+      }
+
+      ("forall", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let forall_under = submatches.values_of("PATH").map(|values| values.collect());
+        let command = submatches
+          .value_of("COMMAND")
+          .ok_or_else(|| format_err!("no commands specified"))?;
+        cmd_forall(config, &mut pool, &mut tree, forall_under, command)
       }
 
       ("config", Some(submatches)) => {
