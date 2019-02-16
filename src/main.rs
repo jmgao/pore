@@ -62,7 +62,7 @@ mod util;
 
 use config::Config;
 use manifest::Manifest;
-use tree::{CheckoutType, FetchType, Tree};
+use tree::{CheckoutType, FetchType, GroupFilter, Tree};
 
 fn unimplemented_subcommand(function: &str) -> ! {
   fatal!("unimplemented subcommand {}", function);
@@ -84,6 +84,7 @@ fn cmd_clone(
   mut pool: &mut ThreadPool,
   target: &str,
   directory: Option<&str>,
+  group_filters: Option<&str>,
   fetch: bool,
 ) -> Result<i32, Error> {
   let (remote, branch) = parse_target(target)?;
@@ -95,8 +96,22 @@ fn cmd_clone(
     bail!("failed to create tree root {:?}: {}", tree_root, err);
   }
 
+  let group_filters = group_filters
+    .map(|s| {
+      s.split(',')
+        .map(|group| {
+          if group.starts_with('-') {
+            GroupFilter::Exclude(group[1..].to_string())
+          } else {
+            GroupFilter::Include(group.to_string())
+          }
+        })
+        .collect()
+    })
+    .unwrap_or_else(Vec::new);
+
   // TODO: Add locking?
-  let mut tree = Tree::construct(&depot, &tree_root, &remote_config, &branch, fetch)?;
+  let mut tree = Tree::construct(&depot, &tree_root, &remote_config, &branch, group_filters, fetch)?;
   let fetch_type = if fetch {
     // We just fetched the manifest.
     FetchType::FetchExceptManifest
@@ -166,6 +181,10 @@ fn main() {
         "the target to checkout in the format <REMOTE>[/<BRANCH>]\n\
          BRANCH defaults to master if unspecified"
       )
+      (@arg GROUP_FILTERS: -g +takes_value
+        "filter projects that satisfy a comma delimited list of groups\n\
+         groups can be prepended with - to specifically exclude them"
+      )
       (@arg LOCAL: -l "don't fetch; use only the local cache")
     )
     (@subcommand clone =>
@@ -177,6 +196,10 @@ fn main() {
       (@arg DIRECTORY:
         "the directory to create and checkout the tree into.\n\
          defaults to BRANCH if unspecified"
+      )
+      (@arg GROUP_FILTERS: -g +takes_value
+        "filter projects that satisfy a comma delimited list of groups\n\
+         groups can be prepended with - to specifically exclude them"
       )
       (@arg LOCAL: -l "don't fetch; use only the local cache")
     )
@@ -298,6 +321,7 @@ fn main() {
           &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           Some("."),
+          submatches.value_of("GROUP_FILTERS"),
           fetch,
         )
       }
@@ -309,6 +333,7 @@ fn main() {
           &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           submatches.value_of("DIRECTORY"),
+          submatches.value_of("GROUP_FILTERS"),
           fetch,
         )
       }

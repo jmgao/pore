@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,6 +52,92 @@ pub enum CheckoutType {
   NoCheckout,
 }
 
+#[derive(Debug)]
+pub enum GroupFilter {
+  Include(String),
+  Exclude(String),
+}
+
+impl GroupFilter {
+  fn filter_project(filters: &[GroupFilter], project: &manifest::Project) -> bool {
+    if filters.is_empty() {
+      return true;
+    }
+
+    let groups = project.groups.as_ref().map(|vec| vec.as_slice()).unwrap_or(&[]);
+
+    let mut included = false;
+    let mut excluded = false;
+
+    for filter in filters {
+      match filter {
+        GroupFilter::Include(group) => {
+          if groups.contains(group) {
+            included = true;
+          }
+        }
+
+        GroupFilter::Exclude(group) => {
+          if groups.contains(group) {
+            excluded = true;
+          }
+        }
+      }
+    }
+
+    included && !excluded
+  }
+}
+
+// toml-rs can't serialize enums.
+impl serde::Serialize for GroupFilter {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    match self {
+      GroupFilter::Include(group) => serializer.serialize_str(group),
+      GroupFilter::Exclude(group) => serializer.serialize_str(&("-".to_string() + group)),
+    }
+  }
+}
+
+struct GroupFilterVisitor;
+impl<'de> serde::de::Visitor<'de> for GroupFilterVisitor {
+  type Value = GroupFilter;
+
+  fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    formatter.write_str("a group")
+  }
+
+  fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+  where
+    E: serde::de::Error,
+  {
+    if value.starts_with('-') {
+      let string = value[1..].to_string();
+      if string.is_empty() {
+        Err(E::custom("empty group name"))
+      } else {
+        Ok(GroupFilter::Exclude(string))
+      }
+    } else if value.is_empty() {
+      Err(E::custom("empty group name"))
+    } else {
+      Ok(GroupFilter::Include(value.to_string()))
+    }
+  }
+}
+
+impl<'de> serde::Deserialize<'de> for GroupFilter {
+  fn deserialize<D>(deserializer: D) -> Result<GroupFilter, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    deserializer.deserialize_str(GroupFilterVisitor)
+  }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TreeConfig {
   pub remote: String,
@@ -59,6 +146,7 @@ pub struct TreeConfig {
   pub tags: Vec<String>,
 
   pub projects: Vec<String>,
+  pub group_filters: Vec<GroupFilter>,
 }
 
 #[derive(Clone, Debug)]
@@ -112,6 +200,7 @@ impl Tree {
     path: T,
     remote_config: &RemoteConfig,
     branch: &str,
+    group_filters: Vec<GroupFilter>,
     fetch: bool,
   ) -> Result<Tree, Error> {
     let tree_root = path.into();
@@ -137,6 +226,7 @@ impl Tree {
       manifest: remote_config.manifest.clone(),
       tags: Vec::new(),
       projects: Vec::new(),
+      group_filters,
     };
 
     let tree = Tree {
@@ -198,20 +288,10 @@ impl Tree {
       .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
-    let projects: Vec<ProjectInfo> = manifest
-      .projects
-      .iter()
-      .map(|(project_path, project)| ProjectInfo {
-        project_path: project.path(),
-        project_name: project.name.clone(),
-        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
-        file_ops: project.file_operations.clone(),
-      })
-      .collect();
-
     manifest
       .projects
       .iter()
+      .filter(|(project_path, project)| GroupFilter::filter_project(&self.config.group_filters, &project))
       .map(|(project_path, project)| ProjectInfo {
         project_path: project_path.to_str().expect("project path not UTF-8").into(),
         project_name: project.name.clone(),
