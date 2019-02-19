@@ -146,7 +146,7 @@ pub struct TreeConfig {
   pub tags: Vec<String>,
 
   pub projects: Vec<String>,
-  pub group_filters: Vec<GroupFilter>,
+  pub group_filters: Option<Vec<GroupFilter>>,
 }
 
 #[derive(Clone, Debug)]
@@ -226,7 +226,7 @@ impl Tree {
       manifest: remote_config.manifest.clone(),
       tags: Vec::new(),
       projects: Vec::new(),
-      group_filters,
+      group_filters: Some(group_filters),
     };
 
     let tree = Tree {
@@ -288,10 +288,17 @@ impl Tree {
       .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
+    let group_filters = self
+      .config
+      .group_filters
+      .as_ref()
+      .map(|vec| vec.as_slice())
+      .unwrap_or(&[]);
+
     manifest
       .projects
       .iter()
-      .filter(|(project_path, project)| GroupFilter::filter_project(&self.config.group_filters, &project))
+      .filter(|(project_path, project)| GroupFilter::filter_project(&group_filters, &project))
       .map(|(project_path, project)| ProjectInfo {
         project_path: project_path.to_str().expect("project path not UTF-8").into(),
         project_name: project.name.clone(),
