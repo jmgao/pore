@@ -207,6 +207,16 @@ fn cmd_prune(
   tree.prune(config, &mut pool, &depot, prune_under)
 }
 
+fn cmd_rebase(
+  mut pool: &mut Pool,
+  tree: &mut Tree,
+  interactive: bool,
+  autosquash: bool,
+  rebase_under: Option<Vec<&str>>,
+) -> Result<i32, Error> {
+  tree.rebase(&mut pool, interactive, autosquash, rebase_under)
+}
+
 fn cmd_forall(
   config: &Config,
   mut pool: &mut Pool,
@@ -301,6 +311,15 @@ fn main() {
     (@subcommand start =>
       (about: "start a branch in the current repository")
       (@arg BRANCH: +required "name of branch to create")
+    )
+    (@subcommand rebase =>
+      (about: "rebase local branch onto upstream branch")
+      (@arg INTERACTIVE: -i --interactive "pass --interactive to git rebase (single project only)")
+      (@arg AUTOSQUASH: --autosquash "pass --autosquash to git rebase")
+      (@arg PATH: ...
+        "path(s) of the projects to rebase\n\
+         defaults to all repositoriries in the tree"
+      )
     )
     (@subcommand upload =>
       (about: "upload patches to Gerrit")
@@ -513,6 +532,15 @@ fn main() {
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let prune_under = submatches.values_of("PATH").map(|values| values.collect());
         cmd_prune(&config, &mut pool, &mut tree, prune_under)
+      }
+
+      ("rebase", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let interactive = submatches.is_present("INTERACTIVE");
+        let autosquash = submatches.is_present("AUTOSQUASH");
+        let rebase_under = submatches.values_of("PATH").map(|values| values.collect());
+        cmd_rebase(&mut pool, &mut tree, interactive, autosquash, rebase_under)
       }
 
       ("status", Some(submatches)) => {

@@ -1034,6 +1034,80 @@ impl Tree {
     }
   }
 
+  pub fn rebase(
+    &self,
+    pool: &mut Pool,
+    interactive: bool,
+    autosquash: bool,
+    rebase_under: Option<Vec<&str>>,
+  ) -> Result<i32, Error> {
+    let manifest = self.read_manifest()?;
+    let projects = self.collect_manifest_projects(&manifest, rebase_under)?;
+
+    if interactive {
+      ensure!(
+        projects.len() == 1,
+        "interactive rebase not possible with multiple projects"
+      );
+      self.interactive_rebase(manifest, autosquash, projects[0].clone())
+    } else {
+      ensure!(!autosquash, "--autosquash is only valid with --interactive");
+      self.non_interactive_rebase(pool, projects)
+    }
+  }
+
+  fn interactive_rebase(&self, manifest: Manifest, autosquash: bool, project: ProjectInfo) -> Result<i32, Error> {
+    let project_meta = manifest
+      .projects
+      .get(&PathBuf::from(&project.project_path))
+      .ok_or_else(|| format_err!("failed to find project {:?}", project.project_path))?;
+
+    let remote_name = project_meta
+      .remote
+      .as_ref()
+      .or_else(|| manifest.default.as_ref().and_then(|d| d.remote.as_ref()))
+      .ok_or_else(|| {
+        format_err!(
+          "project {:?} did not specify a dest_branch and manifest has no default revision",
+          project_meta
+        )
+      })?;
+
+    let dest_branch = project_meta
+      .revision
+      .as_ref()
+      .or_else(|| manifest.default.as_ref().and_then(|d| d.revision.as_ref()))
+      .ok_or_else(|| {
+        format_err!(
+          "project {:?} did not specify a dest_branch and manifest has no default revision",
+          project_meta
+        )
+      })?;
+
+    let mut cmd = std::process::Command::new("git");
+    cmd
+      .current_dir(self.path.join(&project.project_path))
+      .arg("rebase")
+      .arg("--interactive");
+    if autosquash {
+      cmd.arg("--autosquash");
+    }
+
+    cmd.arg(format!("{}/{}", remote_name, dest_branch));
+
+    cmd
+      .spawn()
+      .context("failed to spawn git rebase")?
+      .wait()
+      .context("failed to wait on git rebase")?;
+
+    Ok(0)
+  }
+
+  fn non_interactive_rebase(&self, _pool: &mut Pool, projects: Vec<ProjectInfo>) -> Result<i32, Error> {
+    Err(format_err!("not interactive rebase is not implemented"))
+  }
+
   pub fn forall(
     &self,
     _config: &Config,
