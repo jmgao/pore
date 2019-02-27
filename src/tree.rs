@@ -384,81 +384,76 @@ impl Tree {
       pb.set_prefix("checkout");
       pb.enable_steady_tick(1000);
       let mut checkout_handles = Vec::new();
+      let tree_root = Arc::new(self.path.clone());
+
       for project in &projects {
         let depot = Arc::clone(&depot);
         let remote_config = Arc::clone(&remote_config);
         let project_info = Arc::clone(&project);
         let project_path = self.path.join(&project.project_path);
         let pb = Arc::clone(&pb);
-
-        let tree_root = Arc::new(self.path.clone());
+        let tree_root = Arc::clone(&tree_root);
 
         let handle = pool
-          .spawn_with_handle(future::lazy(move |_| -> Result<Option<(String, Error)>, Error> {
+          .spawn_with_handle(future::lazy(move |_| -> (String, Option<Error>) {
             let project_name = &project_info.project_name;
             let revision = &project_info.revision;
 
-            let error = if project_path.exists() {
-              depot.update_remote_refs(&remote_config, &project_name, &project_path)?;
-              let repo = git2::Repository::open(&project_path)
-                .context(format!("failed to open repository {:?}", project_path))?;
+            let result = || -> Result<(), Error> {
+              if project_path.exists() {
+                depot
+                  .update_remote_refs(&remote_config, &project_name, &project_path)
+                  .context(format_err!("failed to update remote refs"))?;
 
-              // There's two things to be concerned about here:
-              //  - HEAD might be attached to a branch
-              //  - the repo might have uncommitted changes in the index or worktree
-              //
-              // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
-              // try to perform the equivalent of `git pull --rebase`.
-              //
-              // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
-              if !repo.head_detached()? {
-                let head = repo.head()?;
-                let branch_name = head.shorthand().unwrap();
-                Some((
-                  project_info.project_path.to_string(),
-                  format_err!("currently on a branch ({})", branch_name),
-                ))
-              } else {
-                let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
-                  .context(format!("failed to find revision to sync to in {}", project_name))?;
+                let repo = git2::Repository::open(&project_path).context(format!("failed to open repository"))?;
 
-                let current_head = repo
-                  .head()
-                  .context(format!("failed to get HEAD in {:?}", project_info.project_path))?;
+                // There's two things to be concerned about here:
+                //  - HEAD might be attached to a branch
+                //  - the repo might have uncommitted changes in the index or worktree
+                //
+                // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
+                // try to perform the equivalent of `git pull --rebase`.
+                //
+                // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
+                let head_detached = repo
+                  .head_detached()
+                  .context(format_err!("failed to check if HEAD is detached"))?;
+                let current_head = repo.head().context(format_err!("failed to get HEAD"))?;
 
-                // Current head can't be a symbolic reference, because it has to be detached.
-                let current_head = current_head
-                  .target()
-                  .ok_or_else(|| format_err!("failed to get target of HEAD in {:?}", project_info.project_path))?;
-
-                // Only do anything if we're not already on the new HEAD.
-                if current_head != new_head.id() {
-                  let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
-                  match probe {
-                    Ok(()) => {
-                      repo.checkout_tree(&new_head, None).context(format!(
-                        "failed to checkout to {:?} in {:?}",
-                        new_head, project_info.project_path
-                      ))?;
-
-                      repo
-                        .set_head_detached(new_head.id())
-                        .context(format!("failed to detach HEAD in {:?}", project_info.project_path))?;
-
-                      None
-                    }
-                    Err(err) => Some((project_info.project_path.to_string(), err.into())),
-                  }
+                if !head_detached {
+                  let branch_name = current_head
+                    .shorthand()
+                    .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
+                  bail!("currently on a branch ({})", branch_name);
                 } else {
-                  None
-                }
-              }
-            } else {
-              depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
-              None
-            };
+                  let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
+                    .context(format!("failed to find revision to sync to"))?;
 
-            if error.is_none() {
+                  // Current head can't be a symbolic reference, because it has to be detached.
+                  let current_head = current_head
+                    .target()
+                    .ok_or_else(|| format_err!("failed to get target of HEAD"))?;
+
+                  // Only do anything if we're not already on the new HEAD.
+                  if current_head != new_head.id() {
+                    let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+                    if let Err(err) = probe {
+                      bail!(err);
+                    }
+
+                    repo
+                      .checkout_tree(&new_head, None)
+                      .context(format!("failed to checkout to {:?}", new_head))?;
+
+                    repo
+                      .set_head_detached(new_head.id())
+                      .context(format_err!("failed to detach HEAD"))?;
+                  }
+                }
+              } else {
+                depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
+              }
+
               // Set up symlinks to repo hooks.
               let hooks_dir = project_path.join(".git").join("hooks");
               let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
@@ -472,11 +467,14 @@ impl Tree {
                 std::os::unix::fs::symlink(&target, &symlink_path)
                   .context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
               }
-            }
+
+              Ok(())
+            }();
 
             pb.set_message(&project_info.project_name);
             pb.inc(1);
-            Ok(error)
+
+            (project_info.project_name.clone(), result.err())
           }))
           .map_err(|err| format_err!("failed to spawn job to checkout repo"))?;
         checkout_handles.push(handle);
@@ -487,15 +485,12 @@ impl Tree {
 
       for handle in checkout_handles {
         match handle {
-          Ok(None) => {}
-          Ok(Some((project_path, error))) => {
+          (project_path, Some(error)) => {
             println!("{}", console::style(project_path).bold());
             println!("{}", console::style(format!("  {}", error)).red());
           }
 
-          Err(err) => {
-            println!("{}", console::style(err.to_string()).red());
-          }
+          (project_path, None) => {}
         }
       }
 
