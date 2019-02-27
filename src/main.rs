@@ -17,6 +17,9 @@
 #![allow(unused_variables)]
 
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
 extern crate log;
 
 #[macro_use]
@@ -56,6 +59,7 @@ macro_rules! fatal {
 
 mod config;
 mod depot;
+mod hooks;
 mod manifest;
 mod tree;
 mod util;

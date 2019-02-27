@@ -391,12 +391,14 @@ impl Tree {
         let project_path = self.path.join(&project.project_path);
         let pb = Arc::clone(&pb);
 
+        let tree_root = Arc::new(self.path.clone());
+
         let handle = pool
           .spawn_with_handle(future::lazy(move |_| -> Result<Option<(String, Error)>, Error> {
             let project_name = &project_info.project_name;
             let revision = &project_info.revision;
 
-            let result = if project_path.exists() {
+            let error = if project_path.exists() {
               depot.update_remote_refs(&remote_config, &project_name, &project_path)?;
               let repo = git2::Repository::open(&project_path)
                 .context(format!("failed to open repository {:?}", project_path))?;
@@ -456,9 +458,25 @@ impl Tree {
               None
             };
 
+            if error.is_none() {
+              // Set up symlinks to repo hooks.
+              let hooks_dir = project_path.join(".git").join("hooks");
+              let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
+                .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
+                .join(".pore")
+                .join("hooks");
+              for filename in hooks::hooks().keys() {
+                let target = relpath.join(filename);
+                let symlink_path = hooks_dir.join(filename);
+                let _ = std::fs::remove_file(&symlink_path);
+                std::os::unix::fs::symlink(&target, &symlink_path)
+                  .context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
+              }
+            }
+
             pb.set_message(&project_info.project_name);
             pb.inc(1);
-            Ok(result)
+            Ok(error)
           }))
           .map_err(|err| format_err!("failed to spawn job to checkout repo"))?;
         checkout_handles.push(handle);
@@ -528,6 +546,17 @@ impl Tree {
     Ok(0)
   }
 
+  pub fn update_hooks(&mut self) -> Result<(), Error> {
+    // Just always do this, since it's cheap.
+    let hooks_dir = self.path.join(".pore").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).context(format_err!("failed to create hooks directory"))?;
+    for (filename, contents) in hooks::hooks() {
+      let path = hooks_dir.join(filename);
+      std::fs::write(&path, &contents).context(format_err!("failed to create hook at {:?}", path))?;
+    }
+    Ok(())
+  }
+
   pub fn sync(
     &mut self,
     config: &Config,
@@ -547,6 +576,8 @@ impl Tree {
       revision: self.config.branch.clone(),
       file_ops: Vec::new(),
     }];
+
+    self.update_hooks()?;
 
     self.sync_repos(
       &mut pool,
