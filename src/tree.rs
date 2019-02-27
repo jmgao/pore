@@ -503,16 +503,18 @@ impl Tree {
                 .ok_or_else(|| format_err!("linkfile destination is the root?"))?;
               let target = pathdiff::diff_paths(&src_path, &base)
                 .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
-              std::os::unix::fs::symlink(target, &dst_path)
-                .context(format_err!("failed to create symlink at {:?}", dst_path))?;
+
+              let _ = std::os::unix::fs::symlink(target, &dst_path)
+                .map_err(|err| eprintln!("warning: failed to create symlink at {:?}: {}", dst_path, err));
             }
 
             FileOperation::CopyFile { .. } => {
-              std::fs::copy(&src_path, &dst_path).context(format_err!(
-                "failed to copy file from {:?} to {:?}",
-                src_path,
-                dst_path,
-              ))?;
+              let _ = std::fs::copy(&src_path, &dst_path).map_err(|err| {
+                eprintln!(
+                  "warning: failed to copy file from {:?} to {:?}: {}",
+                  src_path, dst_path, err
+                )
+              });
             }
           }
         }
