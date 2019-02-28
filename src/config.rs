@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -28,7 +28,7 @@ use failure::ResultExt;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
   remotes: Vec<RemoteConfig>,
-  depots: HashMap<String, DepotConfig>,
+  depots: BTreeMap<String, DepotConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,10 +53,10 @@ impl Default for Config {
         manifest: "platform/manifest".into(),
         depot: "android".into(),
       }],
-      depots: hashmap! {
+      depots: btreemap! {
         "android".into() => DepotConfig {
           path: "~/.pore/android".into(),
-        }
+        },
       },
     }
   }
