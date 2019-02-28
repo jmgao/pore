@@ -15,9 +15,6 @@ and save it to `~/.pore.toml`.
 
 * `pore upload` is currently unimplemented: use `git push aosp foo:refs/for/master` instead (but be aware that repohooks
   will be skipped).
-* libgit2 [doesn't support shallow clones](https://github.com/libgit2/libgit2/issues/3058), which makes the initial
-  sync take a substantial amount of time and eat up a lot of disk space (~100 GB in the depot for `aosp/master`).
-* Calling out to git-remote-helpers is currently unimplemented.
 * `pore sync` currently does not warn when a project is removed from the manifest.
 
 ### License
