@@ -405,7 +405,7 @@ impl Tree {
                   .update_remote_refs(&remote_config, &project_name, &project_path)
                   .context(format_err!("failed to update remote refs"))?;
 
-                let repo = git2::Repository::open(&project_path).context(format!("failed to open repository"))?;
+                let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
 
                 // There's two things to be concerned about here:
                 //  - HEAD might be attached to a branch
@@ -427,7 +427,7 @@ impl Tree {
                   bail!("currently on a branch ({})", branch_name);
                 } else {
                   let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
-                    .context(format!("failed to find revision to sync to"))?;
+                    .context("failed to find revision to sync to".to_string())?;
 
                   // Current head can't be a symbolic reference, because it has to be detached.
                   let current_head = current_head
