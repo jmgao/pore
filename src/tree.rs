@@ -280,7 +280,11 @@ impl Tree {
     Ok(manifest)
   }
 
-  fn collect_manifest_projects(&self, manifest: &Manifest) -> Vec<ProjectInfo> {
+  fn collect_manifest_projects(
+    &self,
+    manifest: &Manifest,
+    under: Option<Vec<&str>>,
+  ) -> Result<Vec<ProjectInfo>, Error> {
     // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
     let default_revision = manifest
       .default
@@ -295,17 +299,35 @@ impl Tree {
       .map(|vec| vec.as_slice())
       .unwrap_or(&[]);
 
-    manifest
-      .projects
-      .iter()
-      .filter(|(project_path, project)| GroupFilter::filter_project(&group_filters, &project))
-      .map(|(project_path, project)| ProjectInfo {
-        project_path: project_path.to_str().expect("project path not UTF-8").into(),
-        project_name: project.name.clone(),
-        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
-        file_ops: project.file_operations.clone(),
-      })
-      .collect()
+    // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
+    // but repo doesn't handle this either.
+    let tree_root = std::fs::canonicalize(&self.path).context(format_err!("failed to canonicalize tree path"))?;
+    let mut paths = Vec::new();
+    for path in under.unwrap_or_default() {
+      let requested_path =
+        std::fs::canonicalize(&path).context(format_err!("failed to canonicalize requested path '{}'", path))?;
+      paths.push(
+        pathdiff::diff_paths(&requested_path, &tree_root)
+          .ok_or_else(|| format_err!("failed to calculate path diff for {}", path))?,
+      );
+    }
+
+    Ok(
+      manifest
+        .projects
+        .iter()
+        .filter(|(project_path, project)| GroupFilter::filter_project(&group_filters, &project))
+        .filter(|(project_path, _)| {
+          paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
+        })
+        .map(|(project_path, project)| ProjectInfo {
+          project_path: project_path.to_str().expect("project path not UTF-8").into(),
+          project_name: project.name.clone(),
+          revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
+          file_ops: project.file_operations.clone(),
+        })
+        .collect(),
+    )
   }
 
   fn progress_bar_style(project_count: usize) -> indicatif::ProgressStyle {
@@ -561,8 +583,6 @@ impl Tree {
     fetch: FetchType,
     checkout: CheckoutType,
   ) -> Result<i32, Error> {
-    ensure!(sync_under.is_none(), "limiting sync by path is currently unimplemented");
-
     // Sync the manifest repo first.
     let remote_config = config.find_remote(&self.config.remote)?;
     let manifest = vec![ProjectInfo {
@@ -584,7 +604,7 @@ impl Tree {
     )?;
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest);
+    let projects = self.collect_manifest_projects(&manifest, sync_under)?;
     self.sync_repos(
       &mut pool,
       depot,
@@ -801,7 +821,7 @@ impl Tree {
 
   pub fn prune(&self, config: &Config, pool: &mut ThreadPool, depot: &Depot) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest);
+    let projects = self.collect_manifest_projects(&manifest, None)?;
     let project_count = projects.len();
 
     let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
@@ -926,13 +946,8 @@ impl Tree {
     forall_under: Option<Vec<&str>>,
     command: &str,
   ) -> Result<i32, Error> {
-    ensure!(
-      forall_under.is_none(),
-      "limiting forall by path is currently unimplemented"
-    );
-
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest);
+    let projects = self.collect_manifest_projects(&manifest, forall_under)?;
     let project_count = projects.len();
 
     let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
