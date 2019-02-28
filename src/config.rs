@@ -47,12 +47,20 @@ struct DepotConfig {
 impl Default for Config {
   fn default() -> Config {
     Config {
-      remotes: vec![RemoteConfig {
-        name: "aosp".into(),
-        url: "https://android.googlesource.com/".into(),
-        manifest: "platform/manifest".into(),
-        depot: "android".into(),
-      }],
+      remotes: vec![
+        RemoteConfig {
+          name: "aosp".into(),
+          url: "https://android.googlesource.com/".into(),
+          manifest: "platform/manifest".into(),
+          depot: "android".into(),
+        },
+        RemoteConfig {
+          name: "aosp-persistent-https".into(),
+          url: "persistent-https://android.googlesource.com/".into(),
+          manifest: "platform/manifest".into(),
+          depot: "android".into(),
+        },
+      ],
       depots: btreemap! {
         "android".into() => DepotConfig {
           path: "~/.pore/android".into(),
