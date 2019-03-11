@@ -16,6 +16,7 @@
 
 use std::fmt;
 use std::ops::Deref;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -569,7 +570,11 @@ impl Tree {
     std::fs::create_dir_all(&hooks_dir).context(format_err!("failed to create hooks directory"))?;
     for (filename, contents) in hooks::hooks() {
       let path = hooks_dir.join(filename);
-      std::fs::write(&path, &contents).context(format_err!("failed to create hook at {:?}", path))?;
+      let mut file = std::fs::File::create(&path).context(format_err!("failed to open hook at {:?}", path))?;
+      file.write_all(contents.as_bytes()).context(format_err!("failed to create hook at {:?}", path))?;
+      let mut permissions = file.metadata()?.permissions();
+      permissions.set_mode(0o700);
+      file.set_permissions(permissions)?;
     }
     Ok(())
   }
