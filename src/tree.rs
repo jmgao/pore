@@ -195,6 +195,58 @@ pub struct ProjectStatus {
   files: Vec<FileStatus>,
 }
 
+lazy_static! {
+  static ref BRANCH_STYLE: console::Style = { console::Style::new().bold() };
+}
+
+fn branch_to_oid(branch: &git2::Branch) -> Result<git2::Oid, Error> {
+  Ok(
+    branch
+      .get()
+      .peel_to_commit()
+      .context(format_err!(
+        "could not resolve {} reference",
+        branch
+          .name()
+          .context("could not determine branch name")?
+          .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?
+      ))?
+      .id(),
+  )
+}
+
+fn upload_summary(repo: &git2::Repository, dest_branch_name: &String) -> Result<String, Error> {
+  // TODO: Generate a more useful summary showing a list of commits to be uploaded.
+  let head = repo.head().context("could not determine HEAD")?;
+  ensure!(head.is_branch(), "expected HEAD to refer to a branch");
+  let src_branch = git2::Branch::wrap(head);
+  let src_branch_name = src_branch
+    .name()
+    .context("could not determine branch name for HEAD")?
+    .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?;
+
+  let dest_branch = repo
+    .find_branch(dest_branch_name.as_str(), git2::BranchType::Remote)
+    .context(format_err!("could not find branch {}", dest_branch_name))?;
+
+  let (ahead, behind) = repo
+    .graph_ahead_behind(branch_to_oid(&src_branch)?, branch_to_oid(&dest_branch)?)
+    .context(format_err!(
+      "could not determine state of {} against {}",
+      src_branch_name,
+      dest_branch_name
+    ))?;
+  Ok(format!(
+    "pushing {} to {}\n{} is {} commits ahead and {} commits behind {}",
+    BRANCH_STYLE.apply_to(src_branch_name),
+    BRANCH_STYLE.apply_to(dest_branch_name),
+    BRANCH_STYLE.apply_to(src_branch_name),
+    console::style(ahead).green(),
+    console::style(behind).red(),
+    BRANCH_STYLE.apply_to(dest_branch_name)
+  ))
+}
+
 impl Tree {
   pub fn construct<T: Into<PathBuf>>(
     depot: &Depot,
@@ -571,7 +623,9 @@ impl Tree {
     for (filename, contents) in hooks::hooks() {
       let path = hooks_dir.join(filename);
       let mut file = std::fs::File::create(&path).context(format_err!("failed to open hook at {:?}", path))?;
-      file.write_all(contents.as_bytes()).context(format_err!("failed to create hook at {:?}", path))?;
+      file
+        .write_all(contents.as_bytes())
+        .context(format_err!("failed to create hook at {:?}", path))?;
       let mut permissions = file.metadata()?.permissions();
       permissions.set_mode(0o700);
       file.set_permissions(permissions)?;
@@ -729,7 +783,7 @@ impl Tree {
 
           let project_line = console::style(format!("project {:64}", project_status.project_name)).bold();
           let branch = match project_status.branch {
-            Some(branch) => console::style(format!("branch {}", branch)).bold(),
+            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
             None => console::style("(*** NO BRANCH ***)".to_string()).red(),
           };
           println!("{}{}", project_line, branch);
@@ -820,6 +874,80 @@ impl Tree {
     repo
       .set_head(&format!("refs/heads/{}", branch_name))
       .context(format_err!("failed to set HEAD to {}", branch_name))?;
+
+    Ok(0)
+  }
+
+  pub fn upload(&self, upload_under: Option<Vec<&str>>, current_branch: bool) -> Result<i32, Error> {
+    // TODO: Use a pool for >1, figure out how 0 (all projects) should work.
+    ensure!(
+      upload_under.as_ref().map_or(false, |v| v.len() == 1),
+      "multi-project upload not yet implemented"
+    );
+
+    ensure!(
+      current_branch,
+      "interactive workflow not yet implemented; --cbr is required"
+    );
+
+    let manifest = self.read_manifest()?;
+    let projects = self.collect_manifest_projects(&manifest, upload_under)?;
+    for project in projects {
+      let repo = git2::Repository::open(self.path.join(&project.project_path))
+        .context("failed to open repository".to_string())?;
+
+      if repo
+        .head_detached()
+        .context(format_err!("failed to check if HEAD is detached"))?
+      {
+        bail!("cannot upload from detached HEAD")
+      }
+
+      let project_meta = manifest
+        .projects
+        .get(&PathBuf::from(&project.project_path))
+        .ok_or_else(|| format_err!("failed to find project {:?}", project.project_path))?;
+
+      let remote_name = project_meta
+        .remote
+        .as_ref()
+        .or_else(|| manifest.default.as_ref().and_then(|d| d.remote.as_ref()))
+        .ok_or_else(|| {
+          format_err!(
+            "project {:?} did not specify a dest_branch and manifest has no default revision",
+            project_meta
+          )
+        })?;
+
+      let dest_branch = project_meta
+        .revision
+        .as_ref()
+        .or_else(|| manifest.default.as_ref().and_then(|d| d.revision.as_ref()))
+        .ok_or_else(|| {
+          format_err!(
+            "project {:?} did not specify a dest_branch and manifest has no default revision",
+            project_meta
+          )
+        })?;
+
+      let summary = upload_summary(&repo, &format!("{}/{}", remote_name, dest_branch))?;
+      println!("{}", summary);
+      if !clt::confirm("upload patches to Gerrit?", false, "?\n", true) {
+        return Err(format_err!("upload aborted by user"));
+      }
+
+      // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
+      // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
+      let ref_spec = format!("HEAD:refs/for/{}", dest_branch);
+      let git_output = std::process::Command::new("git")
+        .current_dir(self.path.join(&project.project_path))
+        .arg("push")
+        .arg(remote_name)
+        .arg(ref_spec)
+        .output()
+        .context("failed to spawn git push")?;
+      println!("{}", String::from_utf8_lossy(&git_output.stderr));
+    }
 
     Ok(0)
   }

@@ -68,10 +68,6 @@ use config::Config;
 use manifest::Manifest;
 use tree::{CheckoutType, FetchType, GroupFilter, Tree};
 
-fn unimplemented_subcommand(function: &str) -> ! {
-  fatal!("unimplemented subcommand {}", function);
-}
-
 fn parse_target(target: &str) -> Result<(String, String), Error> {
   let vec: Vec<&str> = target.split('/').collect();
   if vec.len() == 1 {
@@ -143,6 +139,10 @@ fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Pat
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
   tree.start(&config, &depot, &remote_config, branch_name, &directory)
+}
+
+fn cmd_upload(tree: &mut Tree, upload_under: Option<Vec<&str>>, current_branch: bool) -> Result<i32, Error> {
+  tree.upload(upload_under, current_branch)
 }
 
 fn cmd_prune(config: Config, mut pool: &mut ThreadPool, tree: &mut Tree) -> Result<i32, Error> {
@@ -228,6 +228,10 @@ fn main() {
     )
     (@subcommand upload =>
       (about: "upload patches to Gerrit")
+      (@arg PATH: ...
+        "path(s) of the projects to be uploaded"
+      )
+      (@arg CURRENT_BRANCH: --cbr "upload current git branch")
     )
     (@subcommand prune =>
       (about: "prune branches that have been merged")
@@ -375,7 +379,15 @@ fn main() {
         cmd_start(config, &mut tree, branch_name, &cwd)
       }
 
-      ("upload", Some(submatches)) => unimplemented_subcommand("upload"),
+      ("upload", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        cmd_upload(
+          &mut tree,
+          submatches.values_of("PATH").map(|values| values.collect()),
+          submatches.is_present("CURRENT_BRANCH"),
+        )
+      }
 
       ("prune", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;

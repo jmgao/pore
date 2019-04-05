@@ -210,6 +210,9 @@ impl Depot {
         self.refs_mirror(&remote_config.name, project).to_str().unwrap(),
       )
       .context("failed to create remote")?;
+
+    // TODO: The push URL should be based on the review element of the manifest.
+    // Projects may fetch from one remote but push to another.
     repo
       .remote_set_pushurl(&remote_config.name, Some(&format!("{}{}", remote_config.url, project)))
       .context("failed to set remote pushurl")?;
