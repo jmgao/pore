@@ -1,0 +1,19 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: jmgao/ubuntu-cosmic-mingw-w64-rust:latest
+    steps:
+      - checkout
+      - run:
+          name: Pull submodules
+          command: git submodule update --init
+      - run:
+          name: Switch to nightly
+          command: rustup default nightly
+      - run:
+          name: Build
+          command: cargo build
+      - run:
+          name: Check
+          command: cargo check
