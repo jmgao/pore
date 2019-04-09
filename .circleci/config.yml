@@ -12,6 +12,9 @@ jobs:
           name: Switch to nightly
           command: rustup default nightly-2019-04-07
       - run:
+          name: Install pkg-config
+          command: apt-get install pkg-config
+      - run:
           name: Install OpenSSL
           command: apt-get install libssl-dev
       - run:
