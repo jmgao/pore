@@ -16,7 +16,7 @@ indoc = "0.3"
 serde = "1.0"
 serde_derive = "1.0"
 toml = "0.4"
-quick-xml = "0.13.2"
+quick-xml = "0.14.0"
 
 clap = "2.32"
 maplit = "1.0"
