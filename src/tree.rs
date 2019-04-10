@@ -938,7 +938,18 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn upload(&self, upload_under: Option<Vec<&str>>, current_branch: bool) -> Result<i32, Error> {
+  pub fn upload(
+    &self,
+    upload_under: Option<Vec<&str>>,
+    current_branch: bool,
+    reviewers: &Vec<String>,
+    cc: &Vec<String>,
+    private: bool,
+    wip: bool,
+    branch_name_as_topic: bool,
+    autosubmit: bool,
+    presubmit_ready: bool,
+  ) -> Result<i32, Error> {
     // TODO: Use a pool for >1, figure out how 0 (all projects) should work.
     ensure!(
       upload_under.as_ref().map_or(false, |v| v.len() == 1),
@@ -1003,13 +1014,50 @@ impl Tree {
       // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
       // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
       let ref_spec = format!("HEAD:refs/for/{}", dest_branch);
-      let git_output = std::process::Command::new("git")
-        .current_dir(self.path.join(&project.project_path))
-        .arg("push")
-        .arg(remote_name)
-        .arg(ref_spec)
-        .output()
-        .context("failed to spawn git push")?;
+      let mut cmd = std::process::Command::new("git");
+      cmd.current_dir(self.path.join(&project.project_path)).arg("push");
+
+      if !reviewers.is_empty() {
+        cmd.arg("-o");
+        cmd.arg(format!("r={}", reviewers.join(",")));
+      }
+
+      if !cc.is_empty() {
+        cmd.arg("-o");
+        cmd.arg(format!("cc={}", cc.join(",")));
+      }
+
+      if wip {
+        cmd.arg("-o");
+        cmd.arg("wip");
+      }
+
+      if private {
+        cmd.arg("-o");
+        cmd.arg("private");
+      }
+
+      if autosubmit {
+        cmd.arg("-o");
+        cmd.arg("l=Autosubmit");
+      }
+
+      if presubmit_ready {
+        cmd.arg("-o");
+        cmd.arg("l=Presubmit-Ready");
+      }
+
+      if branch_name_as_topic {
+        let head = repo.head().context("could not determine HEAD")?;
+        ensure!(head.is_branch(), "expected HEAD to refer to a branch");
+        let branch = git2::Branch::wrap(head);
+        cmd.arg("-o");
+        cmd.arg(format!("topic={}", branch_name(&branch)?));
+      }
+
+      cmd.arg(remote_name).arg(ref_spec);
+
+      let git_output = cmd.output().context("failed to spawn git push")?;
       println!("{}", String::from_utf8_lossy(&git_output.stderr));
     }
 
