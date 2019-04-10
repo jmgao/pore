@@ -197,6 +197,16 @@ pub struct ProjectStatus {
 
 lazy_static! {
   static ref BRANCH_STYLE: console::Style = { console::Style::new().bold() };
+  static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
+}
+
+fn branch_name<'a>(branch: &'a git2::Branch) -> Result<&'a str, Error> {
+  Ok(
+    branch
+      .name()
+      .context("could not determine branch name")?
+      .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?,
+  )
 }
 
 fn branch_to_oid(branch: &git2::Branch) -> Result<git2::Oid, Error> {
@@ -204,19 +214,55 @@ fn branch_to_oid(branch: &git2::Branch) -> Result<git2::Oid, Error> {
     branch
       .get()
       .peel_to_commit()
-      .context(format_err!(
-        "could not resolve {} reference",
-        branch
-          .name()
-          .context("could not determine branch name")?
-          .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?
-      ))?
+      .context(format_err!("could not resolve {} reference", branch_name(branch)?))?
       .id(),
   )
 }
 
-fn upload_summary(repo: &git2::Repository, dest_branch_name: &String) -> Result<String, Error> {
-  // TODO: Generate a more useful summary showing a list of commits to be uploaded.
+fn list_commits_for_upload_inner(
+  from: &git2::Commit,
+  to: &git2::Commit,
+  mut accumulator: &mut Vec<git2::Oid>,
+) -> Result<(), Error> {
+  if from.id() == to.id() {
+    return Ok(());
+  }
+
+  accumulator.push(from.id());
+  for parent in from.parents() {
+    list_commits_for_upload_inner(&parent, to, &mut accumulator)?;
+  }
+  Ok(())
+}
+
+fn list_commits_for_upload(
+  repo: &git2::Repository,
+  src_branch: &git2::Branch,
+  dest_branch: &git2::Branch,
+) -> Result<Vec<git2::Oid>, Error> {
+  let common_ancestor = repo
+    .merge_base(branch_to_oid(&src_branch)?, branch_to_oid(&dest_branch)?)
+    .context(format_err!(
+      "could not find common ancestor of {} and {}",
+      branch_name(src_branch)?,
+      branch_name(dest_branch)?
+    ))?;
+
+  let mut accumulator = Vec::new();
+  list_commits_for_upload_inner(
+    &src_branch
+      .get()
+      .peel_to_commit()
+      .context(format_err!("could not find commit for {}", branch_name(src_branch)?))?,
+    &repo
+      .find_commit(common_ancestor)
+      .context(format_err!("could not find commit matching {}", common_ancestor))?,
+    &mut accumulator,
+  )?;
+  Ok(accumulator)
+}
+
+fn upload_summary(project_name: &str, repo: &git2::Repository, dest_branch_name: &String) -> Result<String, Error> {
   let head = repo.head().context("could not determine HEAD")?;
   ensure!(head.is_branch(), "expected HEAD to refer to a branch");
   let src_branch = git2::Branch::wrap(head);
@@ -236,15 +282,29 @@ fn upload_summary(repo: &git2::Repository, dest_branch_name: &String) -> Result<
       src_branch_name,
       dest_branch_name
     ))?;
-  Ok(format!(
-    "pushing {} to {}\n{} is {} commits ahead and {} commits behind {}",
-    BRANCH_STYLE.apply_to(src_branch_name),
-    BRANCH_STYLE.apply_to(dest_branch_name),
-    BRANCH_STYLE.apply_to(src_branch_name),
-    console::style(ahead).green(),
-    console::style(behind).red(),
-    BRANCH_STYLE.apply_to(dest_branch_name)
-  ))
+
+  let mut lines = vec![format!(
+    "pushing {} commits from {} of {} to {}",
+    ahead,
+    BRANCH_STYLE.apply_to(format!("branch {}", src_branch_name)),
+    PROJECT_STYLE.apply_to(format!("project {}", project_name)),
+    BRANCH_STYLE.apply_to(format!("branch {}", dest_branch_name)),
+  )];
+
+  let commits = list_commits_for_upload(&repo, &src_branch, &dest_branch)?;
+  for commit_oid in commits {
+    let commit = repo
+      .find_commit(commit_oid)
+      .context(format_err!("could not find commit matching {}", commit_oid))?;
+    lines.push(format!(
+      "{:.10} {}",
+      console::style(commit.id()).cyan(),
+      commit
+        .summary()
+        .ok_or_else(|| format_err!("commit message for {} is not valid UTF-8", commit.id()))?
+    ))
+  }
+  Ok(lines.join("\n"))
 }
 
 impl Tree {
@@ -561,7 +621,7 @@ impl Tree {
       for handle in checkout_handles {
         match handle {
           (project_path, Some(error)) => {
-            println!("{}", console::style(project_path).bold());
+            println!("{}", PROJECT_STYLE.apply_to(project_path));
             println!("{}", console::style(format!("  {}", error)).red());
           }
 
@@ -781,7 +841,7 @@ impl Tree {
 
           dirty = true;
 
-          let project_line = console::style(format!("project {:64}", project_status.project_name)).bold();
+          let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_status.project_name));
           let branch = match project_status.branch {
             Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
             None => console::style("(*** NO BRANCH ***)".to_string()).red(),
@@ -930,7 +990,11 @@ impl Tree {
           )
         })?;
 
-      let summary = upload_summary(&repo, &format!("{}/{}", remote_name, dest_branch))?;
+      let summary = upload_summary(
+        &project.project_name,
+        &repo,
+        &format!("{}/{}", remote_name, dest_branch),
+      )?;
       println!("{}", summary);
       if !clt::confirm("upload patches to Gerrit?", false, "?\n", true) {
         return Err(format_err!("upload aborted by user"));
@@ -1059,7 +1123,7 @@ impl Tree {
     }
 
     for result in pruned {
-      println!("{}", console::style(result.project_name).bold());
+      println!("{}", PROJECT_STYLE.apply_to(result.project_name));
       for branch in result.pruned_branches {
         println!("  {}", console::style(branch).red());
       }
@@ -1142,7 +1206,7 @@ impl Tree {
     for result in results {
       let result = result?;
       if result.rc == 0 {
-        println!("{}", console::style(result.project_path).bold());
+        println!("{}", PROJECT_STYLE.apply_to(result.project_path));
       } else {
         println!(
           "{} (rc = {})",
