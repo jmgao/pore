@@ -566,7 +566,7 @@ impl Tree {
                 let target = relpath.join(filename);
                 let symlink_path = hooks_dir.join(filename);
                 let _ = std::fs::remove_file(&symlink_path);
-                std::os::unix::fs::symlink(&target, &symlink_path)
+                symlink(&target, &symlink_path)
                   .context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
               }
 
@@ -643,7 +643,7 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn update_hooks(&mut self) -> Result<(), Error> {
+  pub fn update_hooks(&self) -> Result<(), Error> {
     // Just always do this, since it's cheap.
     let hooks_dir = self.path.join(".pore").join("hooks");
     std::fs::create_dir_all(&hooks_dir).context(format_err!("failed to create hooks directory"))?;
@@ -657,6 +657,17 @@ impl Tree {
       permissions.set_mode(0o700);
       file.set_permissions(permissions)?;
     }
+    Ok(())
+  }
+
+
+  pub fn ensure_repo_compat(&self) -> Result<(), Error> {
+    std::fs::create_dir_all(self.path.join(".repo")).context(format_err!("failed to create dummy .repo dir"))?;
+
+    // Create symlinks for manifests and manifest.xml.
+    std::os::unix::fs::symlink("../.pore/manifest", self.path.join(".repo").join("manifests"))?;
+    std::os::unix::fs::symlink("../.pore/manifest.xml", self.path.join(".repo").join("manifest.xml"))?;
+
     Ok(())
   }
 
@@ -907,8 +918,11 @@ impl Tree {
 
   pub fn upload(
     &self,
+    config: &Config,
+    pool: &mut ThreadPool,
     upload_under: Option<Vec<&str>>,
     current_branch: bool,
+    no_verify: bool,
     reviewers: &Vec<String>,
     cc: &Vec<String>,
     private: bool,
@@ -927,6 +941,13 @@ impl Tree {
       current_branch,
       "interactive workflow not yet implemented; --cbr is required"
     );
+
+    if !no_verify {
+      let result = self.preupload(config, pool, upload_under.clone())?;
+      if result != 0 {
+        bail!("preupload hooks failed");
+      }
+    }
 
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(&manifest, upload_under)?;
@@ -1188,6 +1209,7 @@ impl Tree {
             .arg(command.deref())
             .env("PORE_ROOT", tree_root.as_os_str())
             .env("PORE_ROOT_REL", rel_to_root.as_os_str())
+            .env("REPO_PROJECT", project.project_name)
             .current_dir(&path)
             .output()?;
 
@@ -1217,24 +1239,196 @@ impl Tree {
     for result in results {
       let result = result?;
       if result.rc == 0 {
-        println!("{}", PROJECT_STYLE.apply_to(result.project_path));
-      } else {
-        println!(
-          "{} (rc = {})",
-          console::style(result.project_path).red().bold(),
-          result.rc
-        );
-        rc = result.rc;
-      }
-      let lines = result.output.split(|&c| c == b'\n');
-      for line in lines {
-        let mut stdout = std::io::stdout();
-        stdout.write_all(b"  ")?;
-        stdout.write_all(line)?;
-        stdout.write_all(b"\n")?;
+        if result.rc == 0 {
+          println!("{}", PROJECT_STYLE.apply_to(result.project_path));
+        } else {
+          println!(
+            "{} (rc = {})",
+            console::style(result.project_path).red().bold(),
+            result.rc
+          );
+          rc = result.rc;
+        }
+        let lines = result.output.split(|&c| c == b'\n');
+        for line in lines {
+          let mut stdout = std::io::stdout();
+          stdout.write_all(b"  ")?;
+          stdout.write_all(line)?;
+          stdout.write_all(b"\n")?;
+        }
       }
     }
 
+    Ok(rc)
+  }
+
+  pub fn preupload(&self, config: &Config, pool: &mut ThreadPool, under: Option<Vec<&str>>) -> Result<i32, Error> {
+    let manifest = self.read_manifest()?;
+    let remote_config = config.find_remote(&self.config.remote)?;
+    let projects = self.collect_manifest_projects(&manifest, under)?;
+    let project_count = projects.len();
+
+    let hook_project_name = match manifest.repohooks {
+      Some(hooks) => {
+        // TODO: Bail out if pre-upload isn't in enabled-list.
+        match hooks.in_project {
+          Some(project) => project,
+          None => return Ok(0),
+        }
+      }
+
+      None => {
+        let _ = std::io::stderr().write_all("no preupload hooks configured".as_bytes());
+        return Ok(0);
+      }
+    };
+
+    // repo-hooks looks for a .repo directory, so make one.
+    self.ensure_repo_compat()?;
+
+    let mut hook_project = None;
+    for (_, project) in &manifest.projects {
+      if project.name == hook_project_name {
+        hook_project = Some(project);
+        break;
+      }
+    }
+
+    let hook_project = hook_project.ok_or_else(|| format_err!("couldn't find hook project '{}'", hook_project_name))?;
+    let hook_project_path = hook_project
+      .path
+      .clone()
+      .ok_or_else(|| format_err!("no path for repo-hook project '{}'", hook_project_name))?;
+
+    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
+    pb.set_style(Tree::progress_bar_style(project_count));
+    pb.set_prefix("preupload");
+
+    let remote_config = Arc::new(remote_config);
+    let hook_path = Arc::new(self.path.join(&hook_project_path).join("pre-upload.py"));
+    let tree_root = Arc::new(self.path.clone());
+    let mut handles = Vec::new();
+
+    struct PresubmitResult {
+      project_path: String,
+      rc: i32,
+      output: Vec<u8>,
+    }
+
+    for project in projects {
+      let pb = Arc::clone(&pb);
+      let remote_config = Arc::clone(&remote_config);
+      let tree_root = Arc::clone(&tree_root);
+      let project_path = self.path.join(&project.project_path);
+      let hook_path = Arc::clone(&hook_path);
+
+      let handle = pool
+        .spawn_with_handle(future::lazy(move |_| -> Result<PresubmitResult, Error> {
+          let repo = git2::Repository::open(project_path.deref()).context("failed to open repository".to_string())?;
+
+          let head = repo.head().context("could not determine HEAD")?;
+          let head_branch = git2::Branch::wrap(head);
+          if let Err(err) = head_branch.name() {
+            // repo-hooks need to be on a branch.
+            return Ok(PresubmitResult {
+              project_path: project.project_path.clone(),
+              rc: 0,
+              output: Vec::new(),
+            });
+          }
+
+          let current_head = repo
+            .head()
+            .context(format_err!("failed to get HEAD"))?
+            .peel_to_commit()
+            .context(format_err!("failed to peel HEAD to commit"))?;
+
+          let upstream_object = util::parse_revision(&repo, &remote_config.name, &project.revision)?;
+          let upstream_commit = upstream_object
+            .peel_to_commit()
+            .context("failed to peel upstream object to commit")?;
+
+          let commits = util::find_independent_commits(&repo, &current_head, &upstream_commit)?;
+
+          let mut cmd = std::process::Command::new(hook_path.deref().clone());
+          cmd.current_dir(&project_path);
+          cmd.arg("--project").arg(&project_path);
+
+          for commit in commits {
+            cmd.arg(format!("{}", commit));
+          }
+
+          let result = cmd.output()?;
+
+          // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
+          //       stdout and stderr being the same pipe, to order their output chronologically.
+          let mut output = result.stdout;
+          if !result.stderr.is_empty() {
+            if !output.is_empty() {
+              output.push('\n' as u8);
+            }
+            output.extend(&result.stderr);
+          }
+
+          let rc = result.status.code().unwrap();
+
+          pb.set_message(&project.project_path);
+          pb.inc(1);
+
+          Ok(PresubmitResult {
+            project_path: project.project_path.clone(),
+            rc,
+            output,
+          })
+        }))
+        .map_err(|err| format_err!("failed to spawn job"))?;
+
+      handles.push(handle);
+    }
+
+    let results = pool.run(future::join_all(handles));
+    pb.finish_and_clear();
+
+    let mut rc = 0;
+    let outputs: Vec<Vec<u8>> = results
+      .iter()
+      .map(|result| {
+        let mut output = Vec::new();
+        match result {
+          Ok(result) => {
+            if result.rc != 0 {
+              writeln!(
+                output,
+                "{} (rc = {}):",
+                console::style(&result.project_path).red().bold(),
+                result.rc
+              )
+              .unwrap();
+            } else {
+              if !result.output.is_empty() {
+               writeln!(output, "{}:", console::style(&result.project_path).green().bold()).unwrap();
+              }
+            }
+
+            output.write_all(&result.output).unwrap();
+          }
+          Err(err) => {
+            write!(
+              output,
+              "{}: {}",
+              console::style("failed to run preupload hook").red().bold(),
+              err
+            )
+            .unwrap();
+            rc = 1;
+          }
+        }
+        output
+      })
+      .filter(|vec| !vec.is_empty())
+      .collect();
+
+    let _ = std::io::stdout().write_all(&outputs.join(&('\n' as u8)));
     Ok(rc)
   }
 }
