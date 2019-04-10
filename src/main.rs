@@ -157,9 +157,12 @@ fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
 }
 
 fn cmd_upload(
+  config: Config,
+  pool: &mut ThreadPool,
   tree: &mut Tree,
   upload_under: Option<Vec<&str>>,
   current_branch: bool,
+  no_verify: bool,
   reviewers: Option<&str>,
   cc: Option<&str>,
   private: bool,
@@ -169,8 +172,11 @@ fn cmd_upload(
   presubmit_ready: bool,
 ) -> Result<i32, Error> {
   tree.upload(
+    &config,
+    pool,
     upload_under,
     current_branch,
+    no_verify,
     &user_string_to_vec(reviewers),
     &user_string_to_vec(cc),
     private,
@@ -195,6 +201,14 @@ fn cmd_forall(
   command: &str,
 ) -> Result<i32, Error> {
   tree.forall(&config, &mut pool, forall_under, command)
+}
+
+fn cmd_preupload(
+  config: Config,
+  mut pool: &mut ThreadPool,
+  tree: &mut Tree,
+  preupload_under: Option<Vec<&str>>) -> Result<i32, Error> {
+  tree.preupload(&config, &mut pool, preupload_under)
 }
 
 fn main() {
@@ -268,6 +282,7 @@ fn main() {
         "path(s) of the projects to be uploaded"
       )
       (@arg CURRENT_BRANCH: --cbr "upload current git branch")
+      (@arg NO_VERIFY: --("no-verify") "skip pre-upload hooks")
       (@arg REVIEWERS: --re +takes_value
         "comma separated list of reviewers\n\
          user names without a domain will be assumed to be @google.com"
@@ -303,13 +318,19 @@ fn main() {
       ))
       (@arg PATH: ...
          "path(s) beneath which to run commands\n\
-         defaults to all repositories in the tree if unspecified"
+          defaults to all repositories in the tree if unspecified"
       )
       (@arg COMMAND: -c +takes_value +required
         "command to run."
       )
     )
-
+    (@subcommand preupload =>
+      (about: "run repo's preupload hooks")
+      (@arg PATH: ...
+         "path(s) beneath which to run preupload hooks\n\
+          defaults to all repositories in the tree if unspecified"
+      )
+    )
     (@subcommand config =>
       (about: "prints the default configuration file")
     )
@@ -322,7 +343,6 @@ fn main() {
   );
 
   let matches = app.get_matches();
-
   if let Some(cwd) = matches.value_of("CWD") {
     if let Err(err) = std::env::set_current_dir(&cwd) {
       fatal!("failed to set working directory to {}: {}", cwd, err);
@@ -432,9 +452,12 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         cmd_upload(
+          config,
+          &mut pool,
           &mut tree,
           submatches.values_of("PATH").map(|values| values.collect()),
           submatches.is_present("CURRENT_BRANCH"),
+          submatches.is_present("NO_VERIFY"),
           submatches.value_of("REVIEWERS"),
           submatches.value_of("CC"),
           submatches.is_present("PRIVATE"),
@@ -466,6 +489,13 @@ fn main() {
           .value_of("COMMAND")
           .ok_or_else(|| format_err!("no commands specified"))?;
         cmd_forall(config, &mut pool, &mut tree, forall_under, command)
+      }
+
+      ("preupload", Some(submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let preupload_under = submatches.values_of("PATH").map(|values| values.collect());
+        cmd_preupload(config, &mut pool, &mut tree, preupload_under)
       }
 
       ("config", Some(submatches)) => {

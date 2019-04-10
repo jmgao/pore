@@ -97,6 +97,9 @@ fn find_independent_commits_inner(
   Ok(())
 }
 
+/// Find the commits that will be added when merging `src` into `dst`.
+///
+/// Roughly equivalent to `git show-branch --independent src dst`.
 pub fn find_independent_commits(
   repo: &git2::Repository,
   src: &git2::Commit,
