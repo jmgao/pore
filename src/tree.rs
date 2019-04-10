@@ -197,11 +197,19 @@ pub struct ProjectStatus {
 }
 
 lazy_static! {
-  static ref BRANCH_STYLE: console::Style = { console::Style::new().bold() };
+  static ref AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().green() };
+  static ref NON_AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().red() };
+  static ref SLASH_STYLE: console::Style = { console::Style::new().bold() };
+  static ref BRANCH_STYLE: console::Style = { console::Style::new().bold().blue() };
   static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
 }
 
-fn upload_summary(project_name: &str, repo: &git2::Repository, dst_branch_name: &String) -> Result<String, Error> {
+fn upload_summary(
+  project_name: &str,
+  repo: &git2::Repository,
+  dst_remote: &str,
+  dst_branch_name: &str,
+) -> Result<String, Error> {
   let head = repo.head().context("could not determine HEAD")?;
   ensure!(head.is_branch(), "expected HEAD to refer to a branch");
   let src_branch = git2::Branch::wrap(head);
@@ -211,7 +219,10 @@ fn upload_summary(project_name: &str, repo: &git2::Repository, dst_branch_name: 
     .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?;
 
   let dst_branch = repo
-    .find_branch(dst_branch_name.as_str(), git2::BranchType::Remote)
+    .find_branch(
+      format!("{}/{}", dst_remote, dst_branch_name).as_str(),
+      git2::BranchType::Remote,
+    )
     .context(format_err!("could not find branch {}", dst_branch_name))?;
 
   let (ahead, behind) = repo
@@ -222,22 +233,30 @@ fn upload_summary(project_name: &str, repo: &git2::Repository, dst_branch_name: 
       dst_branch_name
     ))?;
 
+  let is_aosp = dst_remote == "aosp";
   let mut lines = vec![format!(
-    "pushing {} commits from {} of {} to {}",
+    "pushing {} commits from branch {} of project {} to {}{}{}",
     ahead,
-    BRANCH_STYLE.apply_to(format!("branch {}", src_branch_name)),
-    PROJECT_STYLE.apply_to(format!("project {}", project_name)),
-    BRANCH_STYLE.apply_to(format!("branch {}", dst_branch_name)),
+    BRANCH_STYLE.apply_to(src_branch_name),
+    PROJECT_STYLE.apply_to(project_name),
+    if is_aosp {
+      AOSP_REMOTE_STYLE.apply_to(dst_remote)
+    } else {
+      NON_AOSP_REMOTE_STYLE.apply_to(dst_remote)
+    },
+    SLASH_STYLE.apply_to("/"),
+    BRANCH_STYLE.apply_to(dst_branch_name),
   )];
 
   let src_commit = src_branch
     .get()
     .peel_to_commit()
     .context(format_err!("failed to get commit for {}", src_branch_name))?;
-  let dst_commit = dst_branch
-    .get()
-    .peel_to_commit()
-    .context(format_err!("failed to get commit for {}", dst_branch_name))?;
+  let dst_commit = dst_branch.get().peel_to_commit().context(format_err!(
+    "failed to get commit for {}/{}",
+    dst_remote,
+    dst_branch_name
+  ))?;
 
   let commits = find_independent_commits(&repo, &src_commit, &dst_commit)?;
   for commit_oid in commits {
@@ -949,11 +968,7 @@ impl Tree {
           )
         })?;
 
-      let summary = upload_summary(
-        &project.project_name,
-        &repo,
-        &format!("{}/{}", remote_name, dest_branch),
-      )?;
+      let summary = upload_summary(&project.project_name, &repo, &remote_name, &dest_branch)?;
       println!("{}", summary);
       if !clt::confirm("upload patches to Gerrit?", false, "?\n", true) {
         return Err(format_err!("upload aborted by user"));
