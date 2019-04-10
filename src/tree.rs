@@ -25,7 +25,8 @@ use futures::executor::ThreadPool;
 use futures::future;
 use futures::task::SpawnExt;
 
-use super::*;
+use crate::util::*;
+use crate::*;
 use config::RemoteConfig;
 use depot::Depot;
 use manifest::FileOperation;
@@ -200,69 +201,7 @@ lazy_static! {
   static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
 }
 
-fn branch_name<'a>(branch: &'a git2::Branch) -> Result<&'a str, Error> {
-  Ok(
-    branch
-      .name()
-      .context("could not determine branch name")?
-      .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?,
-  )
-}
-
-fn branch_to_oid(branch: &git2::Branch) -> Result<git2::Oid, Error> {
-  Ok(
-    branch
-      .get()
-      .peel_to_commit()
-      .context(format_err!("could not resolve {} reference", branch_name(branch)?))?
-      .id(),
-  )
-}
-
-fn list_commits_for_upload_inner(
-  from: &git2::Commit,
-  to: &git2::Commit,
-  mut accumulator: &mut Vec<git2::Oid>,
-) -> Result<(), Error> {
-  if from.id() == to.id() {
-    return Ok(());
-  }
-
-  accumulator.push(from.id());
-  for parent in from.parents() {
-    list_commits_for_upload_inner(&parent, to, &mut accumulator)?;
-  }
-  Ok(())
-}
-
-fn list_commits_for_upload(
-  repo: &git2::Repository,
-  src_branch: &git2::Branch,
-  dest_branch: &git2::Branch,
-) -> Result<Vec<git2::Oid>, Error> {
-  let common_ancestor = repo
-    .merge_base(branch_to_oid(&src_branch)?, branch_to_oid(&dest_branch)?)
-    .context(format_err!(
-      "could not find common ancestor of {} and {}",
-      branch_name(src_branch)?,
-      branch_name(dest_branch)?
-    ))?;
-
-  let mut accumulator = Vec::new();
-  list_commits_for_upload_inner(
-    &src_branch
-      .get()
-      .peel_to_commit()
-      .context(format_err!("could not find commit for {}", branch_name(src_branch)?))?,
-    &repo
-      .find_commit(common_ancestor)
-      .context(format_err!("could not find commit matching {}", common_ancestor))?,
-    &mut accumulator,
-  )?;
-  Ok(accumulator)
-}
-
-fn upload_summary(project_name: &str, repo: &git2::Repository, dest_branch_name: &String) -> Result<String, Error> {
+fn upload_summary(project_name: &str, repo: &git2::Repository, dst_branch_name: &String) -> Result<String, Error> {
   let head = repo.head().context("could not determine HEAD")?;
   ensure!(head.is_branch(), "expected HEAD to refer to a branch");
   let src_branch = git2::Branch::wrap(head);
@@ -271,16 +210,16 @@ fn upload_summary(project_name: &str, repo: &git2::Repository, dest_branch_name:
     .context("could not determine branch name for HEAD")?
     .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?;
 
-  let dest_branch = repo
-    .find_branch(dest_branch_name.as_str(), git2::BranchType::Remote)
-    .context(format_err!("could not find branch {}", dest_branch_name))?;
+  let dst_branch = repo
+    .find_branch(dst_branch_name.as_str(), git2::BranchType::Remote)
+    .context(format_err!("could not find branch {}", dst_branch_name))?;
 
   let (ahead, behind) = repo
-    .graph_ahead_behind(branch_to_oid(&src_branch)?, branch_to_oid(&dest_branch)?)
+    .graph_ahead_behind(branch_to_commit(&src_branch)?.id(), branch_to_commit(&dst_branch)?.id())
     .context(format_err!(
       "could not determine state of {} against {}",
       src_branch_name,
-      dest_branch_name
+      dst_branch_name
     ))?;
 
   let mut lines = vec![format!(
@@ -288,10 +227,19 @@ fn upload_summary(project_name: &str, repo: &git2::Repository, dest_branch_name:
     ahead,
     BRANCH_STYLE.apply_to(format!("branch {}", src_branch_name)),
     PROJECT_STYLE.apply_to(format!("project {}", project_name)),
-    BRANCH_STYLE.apply_to(format!("branch {}", dest_branch_name)),
+    BRANCH_STYLE.apply_to(format!("branch {}", dst_branch_name)),
   )];
 
-  let commits = list_commits_for_upload(&repo, &src_branch, &dest_branch)?;
+  let src_commit = src_branch
+    .get()
+    .peel_to_commit()
+    .context(format_err!("failed to get commit for {}", src_branch_name))?;
+  let dst_commit = dst_branch
+    .get()
+    .peel_to_commit()
+    .context(format_err!("failed to get commit for {}", dst_branch_name))?;
+
+  let commits = find_independent_commits(&repo, &src_commit, &dst_commit)?;
   for commit_oid in commits {
     let commit = repo
       .find_commit(commit_oid)
