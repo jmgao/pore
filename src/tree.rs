@@ -18,7 +18,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use failure::Error;
 use futures::executor::ThreadPool;
@@ -440,14 +440,20 @@ impl Tree {
       pb.set_prefix("fetching");
       pb.enable_steady_tick(1000);
       let mut handles = Vec::new();
+      let currently_syncing = Arc::new(Mutex::new(std::collections::HashSet::new()));
       for project in &projects {
         let depot = Arc::clone(&depot);
         let remote_config = Arc::clone(&remote_config);
         let project_info = Arc::clone(&project);
         let pb = Arc::clone(&pb);
+        let currently_syncing = Arc::clone(&currently_syncing);
 
         let handle = pool
           .spawn_with_handle(future::lazy(move |_| {
+            currently_syncing
+              .lock()
+              .unwrap()
+              .insert(project_info.project_name.clone());
             let result = depot.fetch_repo(
               &remote_config,
               &project_info.project_name,
@@ -455,8 +461,12 @@ impl Tree {
               None,
               None,
             );
-            pb.set_message(&project_info.project_name);
             pb.inc(1);
+            {
+              let mut set = currently_syncing.lock().unwrap();
+              set.remove(&project_info.project_name);
+              pb.set_message(set.clone().into_iter().last().unwrap_or("done".to_string()).as_str());
+            }
             result
           }))
           .map_err(|err| format_err!("failed to spawn job to fetch"))?;
