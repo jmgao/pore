@@ -141,8 +141,44 @@ fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Pat
   tree.start(&config, &depot, &remote_config, branch_name, &directory)
 }
 
-fn cmd_upload(tree: &mut Tree, upload_under: Option<Vec<&str>>, current_branch: bool) -> Result<i32, Error> {
-  tree.upload(upload_under, current_branch)
+fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
+  users
+    .unwrap_or("")
+    .split(",")
+    .filter(|r| !r.is_empty())
+    .map(|r| {
+      if r.contains("@") {
+        r.to_string()
+      } else {
+        format!("{}@google.com", r)
+      }
+    })
+    .collect()
+}
+
+fn cmd_upload(
+  tree: &mut Tree,
+  upload_under: Option<Vec<&str>>,
+  current_branch: bool,
+  reviewers: Option<&str>,
+  cc: Option<&str>,
+  private: bool,
+  wip: bool,
+  branch_name_as_topic: bool,
+  autosubmit: bool,
+  presubmit_ready: bool,
+) -> Result<i32, Error> {
+  tree.upload(
+    upload_under,
+    current_branch,
+    &user_string_to_vec(reviewers),
+    &user_string_to_vec(cc),
+    private,
+    wip,
+    branch_name_as_topic,
+    autosubmit,
+    presubmit_ready,
+  )
 }
 
 fn cmd_prune(config: Config, mut pool: &mut ThreadPool, tree: &mut Tree) -> Result<i32, Error> {
@@ -232,6 +268,19 @@ fn main() {
         "path(s) of the projects to be uploaded"
       )
       (@arg CURRENT_BRANCH: --cbr "upload current git branch")
+      (@arg REVIEWERS: --re +takes_value
+        "comma separated list of reviewers\n\
+         user names without a domain will be assumed to be @google.com"
+      )
+      (@arg CC: --cc +takes_value
+        "comma separated list of users to CC\n\
+         user names without a domain will be assumed to be @google.com"
+      )
+      (@arg PRIVATE: --private "upload as private change")
+      (@arg WIP: --wip "upload as work in progress change")
+      (@arg BRANCH_NAME_AS_TOPIC: -t "use local branch name as topic")
+      (@arg AUTOSUBMIT: --autosubmit "enable autosubmit")
+      (@arg PRESUBMIT_READY: --presubmit "queue the change for presubmit")
     )
     (@subcommand prune =>
       (about: "prune branches that have been merged")
@@ -386,6 +435,13 @@ fn main() {
           &mut tree,
           submatches.values_of("PATH").map(|values| values.collect()),
           submatches.is_present("CURRENT_BRANCH"),
+          submatches.value_of("REVIEWERS"),
+          submatches.value_of("CC"),
+          submatches.is_present("PRIVATE"),
+          submatches.is_present("WIP"),
+          submatches.is_present("BRANCH_NAME_AS_TOPIC"),
+          submatches.is_present("AUTOSUBMIT"),
+          submatches.is_present("PRESUBMIT_READY"),
         )
       }
 
