@@ -15,6 +15,8 @@
  */
 
 #![allow(unused_variables)]
+#![feature(fnbox)]
+#![feature(futures_api)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -61,6 +63,7 @@ mod config;
 mod depot;
 mod hooks;
 mod manifest;
+mod pool;
 mod tree;
 mod util;
 
