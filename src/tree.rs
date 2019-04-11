@@ -290,7 +290,8 @@ impl Tree {
     std::fs::create_dir_all(&pore_path).context(format!("failed to create directory {:?}", pore_path))?;
 
     let manifest_path = pore_path.join("manifest");
-    symlink("manifest/default.xml", pore_path.join("manifest.xml")).context("failed to create manifest symlink")?;
+    create_symlink("manifest/default.xml", pore_path.join("manifest.xml"))
+      .context("failed to create manifest symlink")?;
 
     if fetch {
       depot.fetch_repo(&remote_config, &remote_config.manifest, &branch, None)?;
@@ -520,7 +521,8 @@ impl Tree {
             let target = relpath.join(filename);
             let symlink_path = hooks_dir.join(filename);
             let _ = std::fs::remove_file(&symlink_path);
-            symlink(&target, &symlink_path).context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
+            create_symlink(&target, &symlink_path)
+              .context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
           }
 
           Ok(())
@@ -556,7 +558,7 @@ impl Tree {
               let target = pathdiff::diff_paths(&src_path, &base)
                 .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
 
-              let _ = std::os::unix::fs::symlink(target, &dst_path)
+              let _ = create_symlink(target, &dst_path)
                 .map_err(|err| eprintln!("warning: failed to create symlink at {:?}: {}", dst_path, err));
             }
 
@@ -601,8 +603,8 @@ impl Tree {
     std::fs::create_dir_all(self.path.join(".repo")).context(format_err!("failed to create dummy .repo dir"))?;
 
     // Create symlinks for manifests and manifest.xml.
-    std::os::unix::fs::symlink("../.pore/manifest", self.path.join(".repo").join("manifests"))?;
-    std::os::unix::fs::symlink("../.pore/manifest.xml", self.path.join(".repo").join("manifest.xml"))?;
+    create_symlink("../.pore/manifest", self.path.join(".repo").join("manifests"))?;
+    create_symlink("../.pore/manifest.xml", self.path.join(".repo").join("manifest.xml"))?;
 
     Ok(())
   }
@@ -1129,9 +1131,13 @@ impl Tree {
   }
 
   pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
-    let manifest = self.read_manifest()?;
-    let remote_config = config.find_remote(&self.config.remote)?;
-    let projects = self.collect_manifest_projects(&manifest, under)?;
+    let manifest = self.read_manifest().context(format_err!("failed to read manifest"))?;
+    let remote_config = config
+      .find_remote(&self.config.remote)
+      .context(format_err!("failed to find remote {}", self.config.remote))?;
+    let projects = self
+      .collect_manifest_projects(&manifest, under)
+      .context(format_err!("failed to collect manifest projects"))?;
 
     let hook_project_name = match manifest.repohooks {
       Some(hooks) => {
@@ -1149,7 +1155,9 @@ impl Tree {
     };
 
     // repo-hooks looks for a .repo directory, so make one.
-    self.ensure_repo_compat()?;
+    self
+      .ensure_repo_compat()
+      .context(format_err!("failed to create repo compatibility files"))?;
 
     let mut hook_project = None;
     for (_, project) in &manifest.projects {

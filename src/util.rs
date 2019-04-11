@@ -40,6 +40,34 @@ pub fn assert_empty_directory<T: AsRef<Path> + Debug>(directory_path: T) -> Resu
   Ok(())
 }
 
+/// Create a symlink, or if it already exists, check that it points to the right place.
+pub fn create_symlink<T: AsRef<Path> + Debug, U: AsRef<Path> + Debug>(target: T, symlink_path: U) -> Result<(), Error> {
+  let target = target.as_ref();
+  let symlink_path = symlink_path.as_ref();
+
+  match std::os::unix::fs::symlink(target, symlink_path) {
+    Ok(()) => Ok(()),
+    Err(err) => {
+      if err.kind() == std::io::ErrorKind::AlreadyExists {
+        let actual_target =
+          std::fs::read_link(symlink_path).context(format_err!("failed to readlink {:?}", symlink_path))?;
+        if actual_target != target {
+          bail!(
+            "mismatch in symlink {:?}, wanted {:?}, actual {:?}",
+            symlink_path,
+            target,
+            actual_target
+          );
+        } else {
+          Ok(())
+        }
+      } else {
+        Err(err).context(format_err!("failed to readlink"))?
+      }
+    }
+  }
+}
+
 pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   repo: &git2::Repository,
   remote: T,

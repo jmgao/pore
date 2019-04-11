@@ -39,7 +39,6 @@ extern crate clap;
 extern crate maplit;
 
 use std::io::Write;
-use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use failure::Error;
