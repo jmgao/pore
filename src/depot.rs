@@ -133,50 +133,34 @@ impl Depot {
     let repo_url = remote_config.url.to_owned() + project + ".git";
 
     let objects_repo = Depot::open_or_create_bare_repo(&objects_path)?;
-    let mut remote = if objects_repo.find_remote(&remote_config.name).is_ok() {
+    if objects_repo.find_remote(&remote_config.name).is_ok() {
       objects_repo.remote_set_url(&remote_config.name, &repo_url)?;
-      objects_repo.find_remote(&remote_config.name).unwrap()
     } else {
       objects_repo
         .remote(&remote_config.name, &repo_url)
-        .context("failed to create remote")?
-    };
+        .context("failed to create remote")?;
+    }
 
-    // Use libgit2 when we can, because it's significantly faster than shelling out to git.
-    let parsed_url = url::Url::parse(&repo_url)?;
-    let scheme = parsed_url.scheme();
-    let scheme_supported = scheme == "git" || scheme == "https" || scheme == "http" || scheme == "ssh" || scheme == "";
-    let use_git2 = scheme_supported && depth.is_none();
+    // Always use git directly.
+    // libgit2 sometimes has pathologically bad performance while fetching some repositories.
+    // We don't lose that much from shelling out to git to fetch, since we're mostly bound on bandwidth.
+    let mut cmd = std::process::Command::new("git");
+    cmd
+      .arg("-C")
+      .arg(&objects_path)
+      .arg("fetch")
+      .arg(&remote_config.name)
+      .arg(&branch)
+      .arg("--no-tags");
 
-    if use_git2 {
-      let mut fetch_opts = git2::FetchOptions::new();
-      fetch_opts
-        .prune(git2::FetchPrune::Off)
-        .update_fetchhead(true)
-        .download_tags(git2::AutotagOption::None);
+    if let Some(depth) = depth {
+      cmd.arg("--depth");
+      cmd.arg(depth.to_string());
+    }
 
-      remote
-        .fetch(&[branch], Some(&mut fetch_opts), None)
-        .context("failed to fetch")?;
-    } else {
-      let mut cmd = std::process::Command::new("git");
-      cmd
-        .arg("-C")
-        .arg(&objects_path)
-        .arg("fetch")
-        .arg(&remote_config.name)
-        .arg(&branch)
-        .arg("--no-tags");
-
-      if let Some(depth) = depth {
-        cmd.arg("--depth");
-        cmd.arg(depth.to_string());
-      }
-
-      let git_output = cmd.output().context("failed to spawn git fetch")?;
-      if !git_output.status.success() {
-        bail!("git fetch failed: {}", String::from_utf8_lossy(&git_output.stderr));
-      }
+    let git_output = cmd.output().context("failed to spawn git fetch")?;
+    if !git_output.status.success() {
+      bail!("git fetch failed: {}", String::from_utf8_lossy(&git_output.stderr));
     }
 
     let refs_path = self.refs_mirror(&remote_config.name, project);
