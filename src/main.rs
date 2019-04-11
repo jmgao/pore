@@ -207,7 +207,8 @@ fn cmd_preupload(
   config: Config,
   mut pool: &mut ThreadPool,
   tree: &mut Tree,
-  preupload_under: Option<Vec<&str>>) -> Result<i32, Error> {
+  preupload_under: Option<Vec<&str>>,
+) -> Result<i32, Error> {
   tree.preupload(&config, &mut pool, preupload_under)
 }
 

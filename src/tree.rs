@@ -670,7 +670,6 @@ impl Tree {
     Ok(())
   }
 
-
   pub fn ensure_repo_compat(&self) -> Result<(), Error> {
     std::fs::create_dir_all(self.path.join(".repo")).context(format_err!("failed to create dummy .repo dir"))?;
 
@@ -1416,7 +1415,7 @@ impl Tree {
               .unwrap();
             } else {
               if !result.output.is_empty() {
-               writeln!(output, "{}:", console::style(&result.project_path).green().bold()).unwrap();
+                writeln!(output, "{}:", console::style(&result.project_path).green().bold()).unwrap();
               }
             }
 
