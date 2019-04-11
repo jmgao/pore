@@ -52,7 +52,7 @@ pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   // Try the git hash first.
   let object = match repo.revparse_single(&revision) {
     Ok(obj) => obj,
-    Err(err) => {
+    Err(_) => {
       let spec = format!("{}/{}", remote, revision);
       repo
         .revparse_single(&spec)

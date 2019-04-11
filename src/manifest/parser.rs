@@ -52,8 +52,9 @@ pub fn parse(data: &str) -> Result<Manifest, Error> {
 
       Event::Eof => break,
 
-      Event::Decl(e) => {}
-      Event::Comment(e) => {}
+      Event::Decl(_) => {}
+      Event::Comment(_) => {}
+
       e => bail!(
         "unexpected event in manifest.xml at position {}: {:?}",
         reader.buffer_position(),
@@ -65,7 +66,7 @@ pub fn parse(data: &str) -> Result<Manifest, Error> {
   Ok(manifest.ok_or_else(|| format_err!("failed to find a manifest tag"))?)
 }
 
-fn parse_manifest(event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result<Manifest, Error> {
+fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result<Manifest, Error> {
   let mut manifest = Manifest::default();
   let mut buf = Vec::new();
   loop {
@@ -122,9 +123,10 @@ fn parse_manifest(event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result<
         ),
       },
 
-      Event::End(e) => break,
+      Event::End(_) => break,
 
-      Event::Comment(e) => {}
+      Event::Comment(_) => {}
+
       e => bail!(
         "unexpected event in <manifest> at position {}: {:?}",
         reader.buffer_position(),
@@ -263,11 +265,9 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
           ),
         },
 
-        Event::End(e) => {
-          break;
-        }
+        Event::End(_) => break,
 
-        Event::Comment(e) => {}
+        Event::Comment(_) => {}
 
         e => bail!(
           "unexpected event in <project> at position {}: {:?}",

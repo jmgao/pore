@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#![allow(unused_variables)]
 #![feature(fnbox)]
 #![feature(futures_api)]
 
@@ -371,7 +370,7 @@ fn main() {
   let config = match config::Config::from_path(&config_path) {
     Ok(config) => config,
 
-    Err(err) => {
+    Err(_err) => {
       info!(
         "failed to read config file at {:?}, falling back to default config",
         config_path
@@ -471,7 +470,7 @@ fn main() {
         )
       }
 
-      ("prune", Some(submatches)) => {
+      ("prune", Some(_submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         cmd_prune(config, &mut pool, &mut tree)
@@ -501,7 +500,7 @@ fn main() {
         cmd_preupload(config, &mut pool, &mut tree, preupload_under)
       }
 
-      ("config", Some(submatches)) => {
+      ("config", Some(_submatches)) => {
         println!("{}", toml::to_string_pretty(&Config::default())?);
         Ok(0)
       }

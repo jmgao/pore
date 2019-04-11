@@ -36,7 +36,7 @@ impl Depot {
   fn open_or_create_bare_repo<T: AsRef<Path>>(path: T) -> Result<git2::Repository, Error> {
     let repo = match git2::Repository::open_bare(&path) {
       Ok(repo) => repo,
-      Err(err) => git2::Repository::init_bare(&path).context("failed to create repository")?,
+      Err(_) => git2::Repository::init_bare(&path).context("failed to create repository")?,
     };
     Ok(repo)
   }
@@ -124,7 +124,6 @@ impl Depot {
     project: &str,
     branch: &str,
     depth: Option<i32>,
-    progress: Option<&indicatif::ProgressBar>,
   ) -> Result<(), Error> {
     ensure!(!project.starts_with('/'), "invalid project path {}", project);
     ensure!(!project.ends_with('/'), "invalid project path {}", project);
@@ -134,14 +133,13 @@ impl Depot {
     let repo_url = remote_config.url.to_owned() + project + ".git";
 
     let objects_repo = Depot::open_or_create_bare_repo(&objects_path)?;
-    let mut remote = match objects_repo.find_remote(&remote_config.name) {
-      Ok(remote) => {
-        objects_repo.remote_set_url(&remote_config.name, &repo_url)?;
-        objects_repo.find_remote(&remote_config.name).unwrap()
-      }
-      Err(err) => objects_repo
+    let mut remote = if objects_repo.find_remote(&remote_config.name).is_ok() {
+      objects_repo.remote_set_url(&remote_config.name, &repo_url)?;
+      objects_repo.find_remote(&remote_config.name).unwrap()
+    } else {
+      objects_repo
         .remote(&remote_config.name, &repo_url)
-        .context("failed to create remote")?,
+        .context("failed to create remote")?
     };
 
     // Use libgit2 when we can, because it's significantly faster than shelling out to git.
@@ -182,10 +180,9 @@ impl Depot {
     }
 
     let refs_path = self.refs_mirror(&remote_config.name, project);
-    let refs_repo = match git2::Repository::open(&refs_path) {
-      Ok(repo) => repo,
-      Err(err) => Depot::clone_alternates(&objects_path, &refs_path, true)?,
-    };
+    if let Err(_) = git2::Repository::open(&refs_path) {
+      Depot::clone_alternates(&objects_path, &refs_path, true)?;
+    }
 
     let objects_refs = objects_path.join("refs").join("remotes").join(&remote_config.name);
     let refs_refs = refs_path.join("refs").join("heads");
