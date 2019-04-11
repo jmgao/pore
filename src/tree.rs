@@ -1153,7 +1153,7 @@ impl Tree {
       }
 
       None => {
-        let _ = std::io::stderr().write_all("no preupload hooks configured".as_bytes());
+        eprintln!("no preupload hooks configured");
         return Ok(0);
       }
     };
