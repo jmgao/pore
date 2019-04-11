@@ -45,7 +45,6 @@ use std::path::{Path, PathBuf};
 
 use failure::Error;
 use failure::ResultExt;
-use futures::executor::ThreadPool;
 
 use clap::{Arg, SubCommand};
 
@@ -69,6 +68,7 @@ mod util;
 
 use config::Config;
 use manifest::Manifest;
+use pool::Pool;
 use tree::{CheckoutType, FetchType, GroupFilter, Tree};
 
 fn parse_target(target: &str) -> Result<(String, String), Error> {
@@ -84,7 +84,7 @@ fn parse_target(target: &str) -> Result<(String, String), Error> {
 
 fn cmd_clone(
   config: Config,
-  mut pool: &mut ThreadPool,
+  mut pool: &mut Pool,
   target: &str,
   directory: Option<&str>,
   group_filters: Option<&str>,
@@ -127,7 +127,7 @@ fn cmd_clone(
 
 fn cmd_sync(
   config: Config,
-  mut pool: &mut ThreadPool,
+  mut pool: &mut Pool,
   tree: &mut Tree,
   sync_under: Option<Vec<&str>>,
   fetch: FetchType,
@@ -161,7 +161,7 @@ fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
 
 fn cmd_upload(
   config: Config,
-  pool: &mut ThreadPool,
+  pool: &mut Pool,
   tree: &mut Tree,
   upload_under: Option<Vec<&str>>,
   current_branch: bool,
@@ -190,7 +190,7 @@ fn cmd_upload(
   )
 }
 
-fn cmd_prune(config: Config, mut pool: &mut ThreadPool, tree: &mut Tree) -> Result<i32, Error> {
+fn cmd_prune(config: Config, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
   tree.prune(&config, &mut pool, &depot)
@@ -198,7 +198,7 @@ fn cmd_prune(config: Config, mut pool: &mut ThreadPool, tree: &mut Tree) -> Resu
 
 fn cmd_forall(
   config: Config,
-  mut pool: &mut ThreadPool,
+  mut pool: &mut Pool,
   tree: &mut Tree,
   forall_under: Option<Vec<&str>>,
   command: &str,
@@ -208,7 +208,7 @@ fn cmd_forall(
 
 fn cmd_preupload(
   config: Config,
-  mut pool: &mut ThreadPool,
+  mut pool: &mut Pool,
   tree: &mut Tree,
   preupload_under: Option<Vec<&str>>,
 ) -> Result<i32, Error> {
@@ -383,15 +383,14 @@ fn main() {
   let mut pool = match matches.value_of("JOBS") {
     Some(jobs) => {
       if let Ok(jobs) = jobs.parse::<usize>() {
-        ThreadPool::builder().pool_size(jobs).create()
+        Pool::with_size(jobs)
       } else {
         fatal!("failed to parse jobs value: {}", jobs);
       }
     }
 
-    None => ThreadPool::new(),
-  }
-  .unwrap_or_else(|err| fatal!("failed to create job pool: {}", err));
+    None => Pool::with_default_size(),
+  };
 
   let result = || -> Result<i32, Error> {
     match matches.subcommand() {

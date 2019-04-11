@@ -18,18 +18,17 @@ use std::fmt;
 use std::ops::Deref;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use failure::Error;
-use futures::executor::ThreadPool;
-use futures::future;
-use futures::task::SpawnExt;
 
 use crate::util::*;
 use crate::*;
+
 use config::RemoteConfig;
 use depot::Depot;
 use manifest::FileOperation;
+use pool::{Job, Pool};
 
 pub struct Tree {
   pub path: PathBuf,
@@ -191,7 +190,6 @@ pub struct FileStatus {
 
 #[derive(Debug)]
 pub struct ProjectStatus {
-  project_name: String,
   branch: Option<String>,
   files: Vec<FileStatus>,
 }
@@ -410,18 +408,9 @@ impl Tree {
     )
   }
 
-  fn progress_bar_style(project_count: usize) -> indicatif::ProgressStyle {
-    let project_count_digits = project_count.to_string().len();
-    let count = "{pos:>".to_owned() + &(6 - project_count_digits).to_string() + "}/{len}";
-    let template = "[{elapsed_precise}] {prefix} ".to_owned() + &count + " {bar:40.cyan/blue}: {msg}";
-    indicatif::ProgressStyle::default_bar()
-      .template(&template)
-      .progress_chars("##-")
-  }
-
   fn sync_repos(
     &mut self,
-    pool: &mut ThreadPool,
+    pool: &mut Pool,
     depot: &Depot,
     remote_config: &RemoteConfig,
     projects: Vec<ProjectInfo>,
@@ -431,71 +420,36 @@ impl Tree {
     let remote_config = Arc::new(remote_config.clone());
     let depot: Arc<Depot> = Arc::new(depot.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
-    let project_count = projects.len();
-    let style = Tree::progress_bar_style(project_count);
 
     if fetch {
-      let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-      pb.set_style(style.clone());
-      pb.set_prefix("fetching");
-      pb.enable_steady_tick(1000);
-      let mut handles = Vec::new();
-      let currently_syncing = Arc::new(Mutex::new(std::collections::HashSet::new()));
+      let mut job = Job::with_name("fetching");
       for project in &projects {
         let depot = Arc::clone(&depot);
         let remote_config = Arc::clone(&remote_config);
         let project_info = Arc::clone(&project);
-        let pb = Arc::clone(&pb);
-        let currently_syncing = Arc::clone(&currently_syncing);
 
-        let handle = pool
-          .spawn_with_handle(future::lazy(move |_| {
-            currently_syncing
-              .lock()
-              .unwrap()
-              .insert(project_info.project_name.clone());
-            let result = depot.fetch_repo(
-              &remote_config,
-              &project_info.project_name,
-              &project_info.revision,
-              None,
-              None,
-            );
-            pb.inc(1);
-            {
-              let mut set = currently_syncing.lock().unwrap();
-              set.remove(&project_info.project_name);
-              pb.set_message(set.clone().into_iter().last().unwrap_or("done".to_string()).as_str());
-            }
-            result
-          }))
-          .map_err(|err| format_err!("failed to spawn job to fetch"))?;
-        handles.push(handle);
+        job.add_task(project_info.project_name.clone(), move |_| {
+          depot.fetch_repo(
+            &remote_config,
+            &project_info.project_name,
+            &project_info.revision,
+            None,
+            None,
+          )
+        });
       }
 
-      let handles = pool.run(future::join_all(handles));
-      pb.finish();
-
-      let errors: Vec<_> = handles
-        .into_iter()
-        .filter(Result::is_err)
-        .map(Result::unwrap_err)
-        .collect();
-
-      if !errors.is_empty() {
-        for error in errors {
-          eprintln!("{}: {}", error, error.find_root_cause());
+      let result = pool.execute(job);
+      if !result.failed.is_empty() {
+        for failure in result.failed {
+          eprintln!("{}: {}", failure.name, failure.result.find_root_cause());
         }
         bail!("failed to sync");
       }
     }
 
     if checkout == CheckoutType::Checkout {
-      let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-      pb.set_style(style.clone());
-      pb.set_prefix("checkout");
-      pb.enable_steady_tick(1000);
-      let mut checkout_handles = Vec::new();
+      let mut job = Job::with_name("checkout");
       let tree_root = Arc::new(self.path.clone());
 
       for project in &projects {
@@ -503,107 +457,87 @@ impl Tree {
         let remote_config = Arc::clone(&remote_config);
         let project_info = Arc::clone(&project);
         let project_path = self.path.join(&project.project_path);
-        let pb = Arc::clone(&pb);
         let tree_root = Arc::clone(&tree_root);
 
-        let handle = pool
-          .spawn_with_handle(future::lazy(move |_| -> (String, Option<Error>) {
-            let project_name = &project_info.project_name;
-            let revision = &project_info.revision;
+        job.add_task(project.project_name.clone(), move |_| {
+          let project_name = &project_info.project_name;
+          let revision = &project_info.revision;
 
-            let result = || -> Result<(), Error> {
-              if project_path.exists() {
-                depot
-                  .update_remote_refs(&remote_config, &project_name, &project_path)
-                  .context(format_err!("failed to update remote refs"))?;
+          if project_path.exists() {
+            depot
+              .update_remote_refs(&remote_config, &project_name, &project_path)
+              .context(format_err!("failed to update remote refs"))?;
 
-                let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
+            let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
 
-                // There's two things to be concerned about here:
-                //  - HEAD might be attached to a branch
-                //  - the repo might have uncommitted changes in the index or worktree
-                //
-                // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
-                // try to perform the equivalent of `git pull --rebase`.
-                //
-                // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
-                let head_detached = repo
-                  .head_detached()
-                  .context(format_err!("failed to check if HEAD is detached"))?;
-                let current_head = repo.head().context(format_err!("failed to get HEAD"))?;
+            // There's two things to be concerned about here:
+            //  - HEAD might be attached to a branch
+            //  - the repo might have uncommitted changes in the index or worktree
+            //
+            // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
+            // try to perform the equivalent of `git pull --rebase`.
+            //
+            // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
+            let head_detached = repo
+              .head_detached()
+              .context(format_err!("failed to check if HEAD is detached"))?;
+            let current_head = repo.head().context(format_err!("failed to get HEAD"))?;
 
-                if !head_detached {
-                  let branch_name = current_head
-                    .shorthand()
-                    .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
-                  bail!("currently on a branch ({})", branch_name);
-                } else {
-                  let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
-                    .context("failed to find revision to sync to".to_string())?;
+            if !head_detached {
+              let branch_name = current_head
+                .shorthand()
+                .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
+              bail!("currently on a branch ({})", branch_name);
+            } else {
+              let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
+                .context("failed to find revision to sync to".to_string())?;
 
-                  // Current head can't be a symbolic reference, because it has to be detached.
-                  let current_head = current_head
-                    .target()
-                    .ok_or_else(|| format_err!("failed to get target of HEAD"))?;
+              // Current head can't be a symbolic reference, because it has to be detached.
+              let current_head = current_head
+                .target()
+                .ok_or_else(|| format_err!("failed to get target of HEAD"))?;
 
-                  // Only do anything if we're not already on the new HEAD.
-                  if current_head != new_head.id() {
-                    let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
-                    if let Err(err) = probe {
-                      bail!(err);
-                    }
-
-                    repo
-                      .checkout_tree(&new_head, None)
-                      .context(format!("failed to checkout to {:?}", new_head))?;
-
-                    repo
-                      .set_head_detached(new_head.id())
-                      .context(format_err!("failed to detach HEAD"))?;
-                  }
+              // Only do anything if we're not already on the new HEAD.
+              if current_head != new_head.id() {
+                let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+                if let Err(err) = probe {
+                  bail!(err);
                 }
-              } else {
-                depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
+
+                repo
+                  .checkout_tree(&new_head, None)
+                  .context(format!("failed to checkout to {:?}", new_head))?;
+
+                repo
+                  .set_head_detached(new_head.id())
+                  .context(format_err!("failed to detach HEAD"))?;
               }
-
-              // Set up symlinks to repo hooks.
-              let hooks_dir = project_path.join(".git").join("hooks");
-              let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
-                .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
-                .join(".pore")
-                .join("hooks");
-              for filename in hooks::hooks().keys() {
-                let target = relpath.join(filename);
-                let symlink_path = hooks_dir.join(filename);
-                let _ = std::fs::remove_file(&symlink_path);
-                symlink(&target, &symlink_path)
-                  .context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
-              }
-
-              Ok(())
-            }();
-
-            pb.set_message(&project_info.project_name);
-            pb.inc(1);
-
-            (project_info.project_name.clone(), result.err())
-          }))
-          .map_err(|err| format_err!("failed to spawn job to checkout repo"))?;
-        checkout_handles.push(handle);
-      }
-
-      let checkout_handles = pool.run(future::join_all(checkout_handles));
-      pb.finish();
-
-      for handle in checkout_handles {
-        match handle {
-          (project_path, Some(error)) => {
-            println!("{}", PROJECT_STYLE.apply_to(project_path));
-            println!("{}", console::style(format!("  {}", error)).red());
+            }
+          } else {
+            depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
           }
 
-          (project_path, None) => {}
-        }
+          // Set up symlinks to repo hooks.
+          let hooks_dir = project_path.join(".git").join("hooks");
+          let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
+            .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
+            .join(".pore")
+            .join("hooks");
+          for filename in hooks::hooks().keys() {
+            let target = relpath.join(filename);
+            let symlink_path = hooks_dir.join(filename);
+            let _ = std::fs::remove_file(&symlink_path);
+            symlink(&target, &symlink_path).context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
+          }
+
+          Ok(())
+        });
+      }
+
+      let results = pool.execute(job);
+      for failure in &results.failed {
+        println!("{}", PROJECT_STYLE.apply_to(&failure.name));
+        println!("{}", console::style(format!("  {}", failure.result)).red());
       }
 
       // Perform linkfiles/copyfiles.
@@ -683,7 +617,7 @@ impl Tree {
   pub fn sync(
     &mut self,
     config: &Config,
-    mut pool: &mut ThreadPool,
+    mut pool: &mut Pool,
     depot: &Depot,
     sync_under: Option<Vec<&str>>,
     fetch: FetchType,
@@ -722,140 +656,117 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn status(&self, config: Config, pool: &mut ThreadPool, status_under: Option<Vec<&str>>) -> Result<i32, Error> {
-    ensure!(
-      status_under.is_none(),
-      "limiting status by path is currently unimplemented"
-    );
-    let projects = self.config.projects.clone();
-    let project_count = projects.len();
-    let style = Tree::progress_bar_style(project_count);
+  pub fn status(&self, config: Config, pool: &mut Pool, status_under: Option<Vec<&str>>) -> Result<i32, Error> {
+    let manifest = self.read_manifest()?;
+    let projects = self.collect_manifest_projects(&manifest, status_under)?;
+    let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
 
-    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-    pb.set_style(Tree::progress_bar_style(project_count));
-    pb.set_prefix("git status");
-
+    let mut job = Job::with_name("git status");
     let tree_root = Arc::new(self.path.clone());
 
-    let mut handles = Vec::new();
-    for project in projects {
-      let pb = Arc::clone(&pb);
+    for project in &projects {
+      let project = Arc::clone(&project);
       let tree_root = Arc::clone(&tree_root);
-      let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<ProjectStatus, Error> {
-          let path = tree_root.join(&project);
-          let repo = git2::Repository::open(&path).context(format!("failed to open repository {}", project))?;
+      let handle = job.add_task(project.project_name.clone(), move |_| -> Result<ProjectStatus, Error> {
+        let path = tree_root.join(&project.project_path);
+        let repo =
+          git2::Repository::open(&path).context(format!("failed to open repository {}", project.project_path))?;
 
-          let head = repo
-            .head()
-            .context(format!("failed to get HEAD for repository {}", project))?;
-          let branch = if head.is_branch() {
-            Some(head.shorthand().unwrap().to_string())
-          } else {
-            None
-          };
+        let head = repo
+          .head()
+          .context(format!("failed to get HEAD for repository {}", project.project_path))?;
+        let branch = if head.is_branch() {
+          Some(head.shorthand().unwrap().to_string())
+        } else {
+          None
+        };
 
-          let statuses = repo
-            .statuses(Some(git2::StatusOptions::new().include_untracked(true)))
-            .context(format!("failed to get status of repository {}", project))?;
+        let statuses = repo
+          .statuses(Some(git2::StatusOptions::new().include_untracked(true)))
+          .context(format!("failed to get status of repository {}", project.project_path))?;
 
-          pb.set_message(&project.to_string());
-          pb.inc(1);
+        let files: Vec<FileStatus> = statuses
+          .iter()
+          .map(|status| {
+            let filename = status.path().unwrap_or("???").to_string();
+            let flags = status.status();
+            let index = if flags.is_index_new() {
+              FileState::New
+            } else if flags.is_index_modified() {
+              FileState::Modified
+            } else if flags.is_index_deleted() {
+              FileState::Deleted
+            } else if flags.is_index_renamed() {
+              FileState::Renamed
+            } else if flags.is_index_typechange() {
+              FileState::TypeChange
+            } else {
+              FileState::Unchanged
+            };
 
-          let files: Vec<FileStatus> = statuses
-            .iter()
-            .map(|status| {
-              let filename = status.path().unwrap_or("???").to_string();
-              let flags = status.status();
-              let index = if flags.is_index_new() {
-                FileState::New
-              } else if flags.is_index_modified() {
-                FileState::Modified
-              } else if flags.is_index_deleted() {
-                FileState::Deleted
-              } else if flags.is_index_renamed() {
-                FileState::Renamed
-              } else if flags.is_index_typechange() {
-                FileState::TypeChange
-              } else {
-                FileState::Unchanged
-              };
+            let worktree = if flags.is_wt_new() {
+              FileState::New
+            } else if flags.is_wt_modified() {
+              FileState::Modified
+            } else if flags.is_wt_deleted() {
+              FileState::Deleted
+            } else if flags.is_wt_renamed() {
+              FileState::Renamed
+            } else if flags.is_wt_typechange() {
+              FileState::TypeChange
+            } else {
+              FileState::Unchanged
+            };
 
-              let worktree = if flags.is_wt_new() {
-                FileState::New
-              } else if flags.is_wt_modified() {
-                FileState::Modified
-              } else if flags.is_wt_deleted() {
-                FileState::Deleted
-              } else if flags.is_wt_renamed() {
-                FileState::Renamed
-              } else if flags.is_wt_typechange() {
-                FileState::TypeChange
-              } else {
-                FileState::Unchanged
-              };
-
-              FileStatus {
-                filename,
-                index,
-                worktree,
-              }
-            })
-            .collect();
-
-          Ok(ProjectStatus {
-            project_name: project.clone(),
-            branch,
-            files,
+            FileStatus {
+              filename,
+              index,
+              worktree,
+            }
           })
-        }))
-        .map_err(|err| format_err!("failed to spawn job to run git status"))?;
-      handles.push(handle);
+          .collect();
+
+        Ok(ProjectStatus { branch, files })
+      });
     }
 
-    let results = pool.run(future::join_all(handles));
-    pb.finish_and_clear();
+    let results = pool.execute(job);
 
     // TODO: Should we be printing the results here, or out in main.rs?
-    let mut errors = Vec::new();
     let mut dirty = false;
-    for result in results {
-      match result {
-        Ok(project_status) => {
-          if project_status.branch == None && project_status.files.is_empty() {
-            continue;
-          }
+    for result in results.successful {
+      let project_name = &result.name;
+      let project_status = &result.result;
+      if project_status.branch == None && project_status.files.is_empty() {
+        continue;
+      }
 
-          dirty = true;
+      dirty = true;
 
-          let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_status.project_name));
-          let branch = match project_status.branch {
-            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
-            None => console::style("(*** NO BRANCH ***)".to_string()).red(),
-          };
-          println!("{}{}", project_line, branch);
+      let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
+      let branch = match &project_status.branch {
+        Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
+        None => console::style("(*** NO BRANCH ***)".to_string()).red(),
+      };
+      println!("{}{}", project_line, branch);
 
-          for file in project_status.files {
-            let index = file.index.to_char().to_uppercase().to_string();
-            let worktree = file.worktree.to_char();
-            let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
-            if file.worktree != FileState::Unchanged {
-              line = line.red();
-            } else {
-              line = line.green();
-            }
-
-            println!("{}", line)
-          }
+      for file in &project_status.files {
+        let index = file.index.to_char().to_uppercase().to_string();
+        let worktree = file.worktree.to_char();
+        let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
+        if file.worktree != FileState::Unchanged {
+          line = line.red();
+        } else {
+          line = line.green();
         }
 
-        Err(err) => errors.push(err),
+        println!("{}", line)
       }
     }
 
-    if !errors.is_empty() {
-      for error in errors {
-        eprintln!("{}", error);
+    if !results.failed.is_empty() {
+      for error in results.failed {
+        eprintln!("{}: {}", error.name, error.result);
       }
       bail!("failed to git status");
     }
@@ -928,7 +839,7 @@ impl Tree {
   pub fn upload(
     &self,
     config: &Config,
-    pool: &mut ThreadPool,
+    pool: &mut Pool,
     upload_under: Option<Vec<&str>>,
     current_branch: bool,
     no_verify: bool,
@@ -1057,120 +968,92 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn prune(&self, config: &Config, pool: &mut ThreadPool, depot: &Depot) -> Result<i32, Error> {
+  pub fn prune(&self, config: &Config, pool: &mut Pool, depot: &Depot) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(&manifest, None)?;
     let project_count = projects.len();
 
-    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-    pb.set_style(Tree::progress_bar_style(project_count));
-    pb.set_prefix("pruning");
-
+    let mut job = Job::with_name("pruning");
     let tree_root = Arc::new(self.path.clone());
 
     struct PruneResult {
-      project_name: String,
       pruned_branches: Vec<String>,
     }
 
     let depot = Arc::new(depot.clone());
-
-    let mut handles = Vec::new();
     for project in projects {
-      let pb = Arc::clone(&pb);
       let depot = Arc::clone(&depot);
       let tree_root = Arc::clone(&tree_root);
-      let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<Option<PruneResult>, Error> {
-          let path = tree_root.join(&project.project_path);
-          let tree_repo =
-            git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
+      job.add_task(project.project_name.clone(), move |_| -> Result<PruneResult, Error> {
+        let path = tree_root.join(&project.project_path);
+        let tree_repo =
+          git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
 
-          let obj_repo_path = depot.objects_mirror(project.project_name);
-          let obj_repo = git2::Repository::open_bare(&obj_repo_path)
-            .context(format!("failed to open object repository {:?}", obj_repo_path))?;
+        let obj_repo_path = depot.objects_mirror(project.project_name);
+        let obj_repo = git2::Repository::open_bare(&obj_repo_path)
+          .context(format!("failed to open object repository {:?}", obj_repo_path))?;
 
-          let branches = tree_repo.branches(Some(git2::BranchType::Local))?;
+        let branches = tree_repo.branches(Some(git2::BranchType::Local))?;
 
-          let mut detach = None;
-          let mut prunable = Vec::new();
-          for branch in branches {
-            let (branch, _) = branch?;
-            let is_head = branch.is_head();
-            let branch_name = branch
-              .name()?
-              .ok_or_else(|| format_err!("branch has name with invalid UTF-8"))?
-              .to_string();
-            let commit = branch
-              .into_reference()
-              .peel_to_commit()
-              .context("failed to resolve branch to commit")?;
-            let commit_hash = commit.id();
+        let mut detach = None;
+        let mut prunable = Vec::new();
+        for branch in branches {
+          let (branch, _) = branch?;
+          let is_head = branch.is_head();
+          let branch_name = branch
+            .name()?
+            .ok_or_else(|| format_err!("branch has name with invalid UTF-8"))?
+            .to_string();
+          let commit = branch
+            .into_reference()
+            .peel_to_commit()
+            .context("failed to resolve branch to commit")?;
+          let commit_hash = commit.id();
 
-            // Search for this commit in the object repo.
-            if let Ok(commit) = obj_repo.find_commit(commit_hash) {
-              // Found a prunable commit.
-              if is_head {
-                detach = Some(commit_hash);
-              }
-              prunable.push(branch_name);
+          // Search for this commit in the object repo.
+          if let Ok(commit) = obj_repo.find_commit(commit_hash) {
+            // Found a prunable commit.
+            if is_head {
+              detach = Some(commit_hash);
             }
-          }
-
-          if let Some(commit) = detach {
-            tree_repo.set_head_detached(commit)?;
-          }
-
-          for branch_name in &prunable {
-            let mut branch = tree_repo.find_branch(&branch_name, git2::BranchType::Local)?;
-            branch
-              .delete()
-              .context(format!("failed to delete branch {}", branch_name))?;
-          }
-
-          pb.set_message(&project.project_path);
-          pb.inc(1);
-
-          Ok(Some(PruneResult {
-            project_name: project.project_path.clone(),
-            pruned_branches: prunable,
-          }))
-        }))
-        .map_err(|err| format_err!("failed to spawn job to fetch"))?;
-      handles.push(handle);
-    }
-
-    let results = pool.run(future::join_all(handles));
-    pb.finish_and_clear();
-
-    let mut errors = Vec::new();
-    let mut pruned = Vec::new();
-
-    for result in results {
-      match result {
-        Ok(Some(result)) => {
-          if !result.pruned_branches.is_empty() {
-            pruned.push(result)
+            prunable.push(branch_name);
           }
         }
 
-        Ok(None) => {}
-        Err(err) => errors.push(err),
+        if let Some(commit) = detach {
+          tree_repo.set_head_detached(commit)?;
+        }
+
+        for branch_name in &prunable {
+          let mut branch = tree_repo.find_branch(&branch_name, git2::BranchType::Local)?;
+          branch
+            .delete()
+            .context(format!("failed to delete branch {}", branch_name))?;
+        }
+
+        Ok(PruneResult {
+          pruned_branches: prunable,
+        })
+      });
+    }
+
+    let results = pool.execute(job);
+    let mut failed = false;
+    for error in results.failed {
+      eprintln!("{}: {}", error.name, error.result);
+      failed = true;
+    }
+
+    for result in results.successful {
+      if !result.result.pruned_branches.is_empty() {
+        println!("{}", PROJECT_STYLE.apply_to(result.name));
+        for branch in result.result.pruned_branches {
+          println!("  {}", console::style(branch).red());
+        }
       }
     }
 
-    for error in &errors {
-      eprintln!("{}", error);
-    }
-
-    for result in pruned {
-      println!("{}", PROJECT_STYLE.apply_to(result.project_name));
-      for branch in result.pruned_branches {
-        println!("  {}", console::style(branch).red());
-      }
-    }
-
-    if errors.is_empty() {
+    if !failed {
       Ok(0)
     } else {
       Ok(1)
@@ -1180,7 +1063,7 @@ impl Tree {
   pub fn forall(
     &self,
     config: &Config,
-    pool: &mut ThreadPool,
+    pool: &mut Pool,
     forall_under: Option<Vec<&str>>,
     command: &str,
   ) -> Result<i32, Error> {
@@ -1188,90 +1071,73 @@ impl Tree {
     let projects = self.collect_manifest_projects(&manifest, forall_under)?;
     let project_count = projects.len();
 
-    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-    pb.set_style(Tree::progress_bar_style(project_count));
-    pb.set_prefix("forall");
-
+    let mut job = Job::with_name("forall");
     let tree_root = Arc::new(self.path.clone());
     let command = Arc::new(command.to_string());
-    let mut handles = Vec::new();
 
     struct CommandResult {
-      project_path: String,
       rc: i32,
       output: Vec<u8>,
     }
 
     for project in projects {
-      let pb = Arc::clone(&pb);
       let tree_root = Arc::clone(&tree_root);
       let command = Arc::clone(&command);
 
-      let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<CommandResult, Error> {
-          let path = tree_root.join(&project.project_path);
-          let rel_to_root = pathdiff::diff_paths(&tree_root, &path)
-            .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
+      job.add_task(project.project_name.clone(), move |_| -> Result<CommandResult, Error> {
+        let path = tree_root.join(&project.project_path);
+        let rel_to_root = pathdiff::diff_paths(&tree_root, &path)
+          .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
 
-          let result = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(command.deref())
-            .env("PORE_ROOT", tree_root.as_os_str())
-            .env("PORE_ROOT_REL", rel_to_root.as_os_str())
-            .env("REPO_PROJECT", project.project_name)
-            .current_dir(&path)
-            .output()?;
+        let result = std::process::Command::new("sh")
+          .arg("-c")
+          .arg(command.deref())
+          .env("PORE_ROOT", tree_root.as_os_str())
+          .env("PORE_ROOT_REL", rel_to_root.as_os_str())
+          .env("REPO_PROJECT", project.project_name)
+          .current_dir(&path)
+          .output()?;
 
-          // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
-          //       stdout and stderr being the same pipe, to order their output chronologically.
-          let output = result.stdout;
-          let rc = result.status.code().unwrap();
+        // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
+        //       stdout and stderr being the same pipe, to order their output chronologically.
+        let output = result.stdout;
+        let rc = result.status.code().unwrap();
 
-          pb.set_message(&project.project_path);
-          pb.inc(1);
-
-          Ok(CommandResult {
-            project_path: project.project_path.clone(),
-            rc,
-            output,
-          })
-        }))
-        .map_err(|err| format_err!("failed to spawn job"))?;
-
-      handles.push(handle);
+        Ok(CommandResult { rc, output })
+      });
     }
 
-    let results = pool.run(future::join_all(handles));
-    pb.finish_and_clear();
+    let results = pool.execute(job);
 
     let mut rc = 0;
-    for result in results {
-      let result = result?;
+    for result in results.successful {
+      let project_name = result.name;
+      let result = result.result;
       if result.rc == 0 {
-        if result.rc == 0 {
-          println!("{}", PROJECT_STYLE.apply_to(result.project_path));
-        } else {
-          println!(
-            "{} (rc = {})",
-            console::style(result.project_path).red().bold(),
-            result.rc
-          );
-          rc = result.rc;
-        }
-        let lines = result.output.split(|&c| c == b'\n');
-        for line in lines {
-          let mut stdout = std::io::stdout();
-          stdout.write_all(b"  ")?;
-          stdout.write_all(line)?;
-          stdout.write_all(b"\n")?;
-        }
+        println!("{}", PROJECT_STYLE.apply_to(project_name));
+      } else {
+        println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
+        rc = result.rc;
+      }
+      let lines = result.output.split(|&c| c == b'\n');
+      for line in lines {
+        let mut stdout = std::io::stdout();
+        stdout.write_all(b"  ")?;
+        stdout.write_all(line)?;
+        stdout.write_all(b"\n")?;
       }
     }
 
+    if !results.failed.is_empty() {
+      for result in results.failed {
+        eprintln!("{}: {}", console::style(result.name).red().bold(), result.result);
+        rc = 1;
+      }
+    }
     Ok(rc)
   }
 
-  pub fn preupload(&self, config: &Config, pool: &mut ThreadPool, under: Option<Vec<&str>>) -> Result<i32, Error> {
+  pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
     let remote_config = config.find_remote(&self.config.remote)?;
     let projects = self.collect_manifest_projects(&manifest, under)?;
@@ -1309,30 +1175,26 @@ impl Tree {
       .clone()
       .ok_or_else(|| format_err!("no path for repo-hook project '{}'", hook_project_name))?;
 
-    let pb = Arc::new(indicatif::ProgressBar::new(project_count as u64));
-    pb.set_style(Tree::progress_bar_style(project_count));
-    pb.set_prefix("preupload");
+    let mut job = Job::with_name("preupload");
 
     let remote_config = Arc::new(remote_config);
     let hook_path = Arc::new(self.path.join(&hook_project_path).join("pre-upload.py"));
     let tree_root = Arc::new(self.path.clone());
-    let mut handles = Vec::new();
 
     struct PresubmitResult {
-      project_path: String,
       rc: i32,
       output: Vec<u8>,
     }
 
     for project in projects {
-      let pb = Arc::clone(&pb);
       let remote_config = Arc::clone(&remote_config);
       let tree_root = Arc::clone(&tree_root);
       let project_path = self.path.join(&project.project_path);
       let hook_path = Arc::clone(&hook_path);
 
-      let handle = pool
-        .spawn_with_handle(future::lazy(move |_| -> Result<PresubmitResult, Error> {
+      job.add_task(
+        project.project_path.clone(),
+        move |_| -> Result<PresubmitResult, Error> {
           let repo = git2::Repository::open(project_path.deref()).context("failed to open repository".to_string())?;
 
           let head = repo.head().context("could not determine HEAD")?;
@@ -1340,7 +1202,6 @@ impl Tree {
           if let Err(err) = head_branch.name() {
             // repo-hooks need to be on a branch.
             return Ok(PresubmitResult {
-              project_path: project.project_path.clone(),
               rc: 0,
               output: Vec::new(),
             });
@@ -1381,63 +1242,52 @@ impl Tree {
 
           let rc = result.status.code().unwrap();
 
-          pb.set_message(&project.project_path);
-          pb.inc(1);
-
-          Ok(PresubmitResult {
-            project_path: project.project_path.clone(),
-            rc,
-            output,
-          })
-        }))
-        .map_err(|err| format_err!("failed to spawn job"))?;
-
-      handles.push(handle);
+          Ok(PresubmitResult { rc, output })
+        },
+      );
     }
 
-    let results = pool.run(future::join_all(handles));
-    pb.finish_and_clear();
+    let results = pool.execute(job);
 
     let mut rc = 0;
     let outputs: Vec<Vec<u8>> = results
+      .successful
       .iter()
       .map(|result| {
         let mut output = Vec::new();
-        match result {
-          Ok(result) => {
-            if result.rc != 0 {
-              writeln!(
-                output,
-                "{} (rc = {}):",
-                console::style(&result.project_path).red().bold(),
-                result.rc
-              )
-              .unwrap();
-            } else {
-              if !result.output.is_empty() {
-                writeln!(output, "{}:", console::style(&result.project_path).green().bold()).unwrap();
-              }
-            }
-
-            output.write_all(&result.output).unwrap();
-          }
-          Err(err) => {
-            write!(
-              output,
-              "{}: {}",
-              console::style("failed to run preupload hook").red().bold(),
-              err
-            )
-            .unwrap();
-            rc = 1;
+        let project_name = &result.name;
+        let result = &result.result;
+        if result.rc != 0 {
+          writeln!(
+            output,
+            "{} (rc = {}):",
+            console::style(&project_name).red().bold(),
+            result.rc
+          )
+          .unwrap();
+          rc = result.rc;
+        } else {
+          if !result.output.is_empty() {
+            writeln!(output, "{}:", console::style(&project_name).green().bold()).unwrap();
           }
         }
+        output.write_all(&result.output).unwrap();
         output
       })
       .filter(|vec| !vec.is_empty())
       .collect();
-
     let _ = std::io::stdout().write_all(&outputs.join(&('\n' as u8)));
+
+    for failure in results.failed {
+      println!(
+        "{}: {}: {}",
+        failure.name,
+        console::style("failed to run preupload hook").red().bold(),
+        failure.result
+      );
+      rc = 1;
+    }
+
     Ok(rc)
   }
 }
