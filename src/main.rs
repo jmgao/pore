@@ -67,7 +67,15 @@ mod util;
 use config::Config;
 use manifest::Manifest;
 use pool::Pool;
-use tree::{CheckoutType, FetchType, GroupFilter, Tree};
+use tree::{CheckoutType, FileState, FetchType, GroupFilter, Tree};
+
+lazy_static! {
+  static ref AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().green() };
+  static ref NON_AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().red() };
+  static ref SLASH_STYLE: console::Style = { console::Style::new().bold() };
+  static ref BRANCH_STYLE: console::Style = { console::Style::new().bold().blue() };
+  static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
+}
 
 fn parse_target(target: &str) -> Result<(String, String), Error> {
   let vec: Vec<&str> = target.split('/').collect();
@@ -333,6 +341,12 @@ fn main() {
           defaults to all repositories in the tree if unspecified"
       )
     )
+    (@subcommand manifest =>
+      (about: "generate a manifest corresponding to the current state of the tree")
+      (@arg OUTPUT: -o --output +takes_value value_name("FILE")
+        "write result to FILE instead of to standard output"
+      )
+    )
     (@subcommand config =>
       (about: "prints the default configuration file")
     )
@@ -479,7 +493,58 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd.clone())?;
         let status_under = submatches.values_of("PATH").map(|values| values.collect());
-        tree.status(config, &mut pool, status_under)
+
+        let results = tree.status(config, &mut pool, status_under)?;
+        let mut dirty = false;
+        for result in results.successful {
+          let project_name = &result.name;
+          let project_status = &result.result;
+          if project_status.branch == None && project_status.files.is_empty() {
+            continue;
+          }
+
+          dirty = true;
+
+          let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
+          let branch = match &project_status.branch {
+            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
+            None => console::style("(*** NO BRANCH ***)".to_string()).red(),
+          };
+          println!("{}{}", project_line, branch);
+
+          for file in &project_status.files {
+            let index = file.index.to_char().to_uppercase().to_string();
+            let worktree = file.worktree.to_char();
+            let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
+            if file.worktree != FileState::Unchanged {
+              line = line.red();
+            } else {
+              line = line.green();
+            }
+
+            println!("{}", line)
+          }
+        }
+
+        if !results.failed.is_empty() {
+          for error in results.failed {
+            eprintln!("{}: {}", error.name, error.result);
+          }
+          bail!("failed to git status");
+        }
+
+        if dirty {
+          Ok(1)
+        } else {
+          Ok(0)
+        }
+      }
+
+      ("manifest", Some(submatches)) => {
+        let output = submatches.value_of("OUTPUT");
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let tree = Tree::find_from_path(cwd.clone())?;
+        tree.generate_manifest(config, &mut pool, output)
       }
 
       ("forall", Some(submatches)) => {

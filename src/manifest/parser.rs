@@ -115,7 +115,7 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
 
         b"default" => populate_option!(manifest.default, parse_default(&e, &reader)?),
         b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, &reader)?),
-        b"repo-hooks" => populate_option!(manifest.repohooks, parse_repo_hooks(&e, &reader)?),
+        b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, &reader)?),
 
         _ => bail!(
           "unexpected empty element in <manifest>: {}",

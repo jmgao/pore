@@ -28,7 +28,7 @@ use crate::*;
 use config::RemoteConfig;
 use depot::Depot;
 use manifest::FileOperation;
-use pool::{Job, Pool};
+use pool::{ExecutionResult, ExecutionResults, Job, Pool};
 
 pub struct Tree {
   pub path: PathBuf,
@@ -169,7 +169,7 @@ pub enum FileState {
 }
 
 impl FileState {
-  fn to_char(&self) -> char {
+  pub fn to_char(&self) -> char {
     match self {
       FileState::New => 'a',
       FileState::Modified => 'm',
@@ -190,16 +190,9 @@ pub struct FileStatus {
 
 #[derive(Debug)]
 pub struct ProjectStatus {
-  branch: Option<String>,
-  files: Vec<FileStatus>,
-}
-
-lazy_static! {
-  static ref AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().green() };
-  static ref NON_AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().red() };
-  static ref SLASH_STYLE: console::Style = { console::Style::new().bold() };
-  static ref BRANCH_STYLE: console::Style = { console::Style::new().bold().blue() };
-  static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
+  pub branch: Option<String>,
+  pub commit: git2::Oid,
+  pub files: Vec<FileStatus>,
 }
 
 fn upload_summary(
@@ -651,12 +644,17 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn status(&self, _config: Config, pool: &mut Pool, status_under: Option<Vec<&str>>) -> Result<i32, Error> {
+  pub fn status(
+    &self,
+    _config: Config,
+    pool: &mut Pool,
+    status_under: Option<Vec<&str>>,
+  ) -> Result<ExecutionResults<ProjectStatus>, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(&manifest, status_under)?;
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
 
-    let mut job = Job::with_name("git status");
+    let mut job = Job::with_name("status");
     let tree_root = Arc::new(self.path.clone());
 
     for project in &projects {
@@ -670,6 +668,7 @@ impl Tree {
         let head = repo
           .head()
           .context(format!("failed to get HEAD for repository {}", project.project_path))?;
+        let commit = head.peel_to_commit().context("failed to peel HEAD to commit")?.id();
         let branch = if head.is_branch() {
           Some(head.shorthand().unwrap().to_string())
         } else {
@@ -721,56 +720,11 @@ impl Tree {
           })
           .collect();
 
-        Ok(ProjectStatus { branch, files })
+        Ok(ProjectStatus { branch, commit, files })
       });
     }
 
-    let results = pool.execute(job);
-
-    // TODO: Should we be printing the results here, or out in main.rs?
-    let mut dirty = false;
-    for result in results.successful {
-      let project_name = &result.name;
-      let project_status = &result.result;
-      if project_status.branch == None && project_status.files.is_empty() {
-        continue;
-      }
-
-      dirty = true;
-
-      let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
-      let branch = match &project_status.branch {
-        Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
-        None => console::style("(*** NO BRANCH ***)".to_string()).red(),
-      };
-      println!("{}{}", project_line, branch);
-
-      for file in &project_status.files {
-        let index = file.index.to_char().to_uppercase().to_string();
-        let worktree = file.worktree.to_char();
-        let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
-        if file.worktree != FileState::Unchanged {
-          line = line.red();
-        } else {
-          line = line.green();
-        }
-
-        println!("{}", line)
-      }
-    }
-
-    if !results.failed.is_empty() {
-      for error in results.failed {
-        eprintln!("{}: {}", error.name, error.result);
-      }
-      bail!("failed to git status");
-    }
-
-    if dirty {
-      Ok(1)
-    } else {
-      Ok(0)
-    }
+    Ok(pool.execute(job))
   }
 
   pub fn start(
@@ -1139,7 +1093,7 @@ impl Tree {
       .collect_manifest_projects(&manifest, under)
       .context(format_err!("failed to collect manifest projects"))?;
 
-    let hook_project_name = match manifest.repohooks {
+    let hook_project_name = match manifest.repo_hooks {
       Some(hooks) => {
         // TODO: Bail out if pre-upload isn't in enabled-list.
         match hooks.in_project {
@@ -1285,5 +1239,47 @@ impl Tree {
     }
 
     Ok(rc)
+  }
+
+  pub fn generate_manifest(&self, config: Config, pool: &mut Pool, output: Option<&str>) -> Result<i32, Error> {
+    let status = self.status(config, pool, None)?;
+    let mut bail = false;
+    for failed in status.failed {
+      eprintln!("failed to get status on {}: {}", failed.name, failed.result);
+      bail = true;
+    }
+    if bail {
+      return Ok(1);
+    }
+
+    let mut manifest = self.read_manifest()?;
+    for project in status.successful {
+      let ExecutionResult {
+        name: project_name,
+        result: project_status,
+      } = project;
+
+      // TODO: Check to see if the commit we have is available on upstream.
+      if !project_status.files.is_empty() {
+        eprintln!(
+          "warning: untracked changes in project {}",
+          PROJECT_STYLE.apply_to(&project_name)
+        );
+      }
+      let mut manifest_project = manifest
+        .projects
+        .iter_mut()
+        .find(|(_k, v)| v.name == project_name)
+        .ok_or_else(|| format_err!("failed to find project {} in manifest", project_name))?;
+      manifest_project.1.revision = Some(format!("{}", project_status.commit));
+    }
+
+    let output: Box<dyn Write> = match output {
+      Some(path) => Box::new(std::fs::File::create(&path)?),
+      None => Box::new(std::io::stdout()),
+    };
+
+    manifest.serialize(output).context("failed to serialize manifest")?;
+    Ok(0)
   }
 }

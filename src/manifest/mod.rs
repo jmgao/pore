@@ -15,11 +15,13 @@
  */
 
 use std::collections::{BTreeMap, HashMap};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use failure::{Error, ResultExt};
 
 mod parser;
+mod serializer;
 
 #[derive(Default, Debug)]
 pub struct Manifest {
@@ -27,7 +29,7 @@ pub struct Manifest {
   pub projects: BTreeMap<PathBuf, Project>,
   pub default: Option<Default>,
   pub manifest_server: Option<ManifestServer>,
-  pub repohooks: Option<RepoHooks>,
+  pub repo_hooks: Option<RepoHooks>,
 }
 
 #[derive(Default, Debug)]
@@ -111,5 +113,9 @@ impl Manifest {
     let path = path.as_ref();
     let data = std::fs::read(path).context(format!("failed to read {:?}", path))?;
     Manifest::parse(&data)
+  }
+
+  pub fn serialize(&self, output: Box<dyn Write>) -> Result<(), Error> {
+    serializer::serialize(self, output)
   }
 }
