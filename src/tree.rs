@@ -665,7 +665,7 @@ impl Tree {
 
   pub fn status(
     &self,
-    _config: Config,
+    _config: &Config,
     pool: &mut Pool,
     status_under: Option<Vec<&str>>,
   ) -> Result<ExecutionResults<ProjectStatus>, Error> {
@@ -1261,7 +1261,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn generate_manifest(&self, config: Config, pool: &mut Pool, output: Option<&str>) -> Result<i32, Error> {
+  pub fn generate_manifest(&self, config: &Config, pool: &mut Pool, output: Option<&str>) -> Result<i32, Error> {
     let status = self.status(config, pool, None)?;
     let mut bail = false;
     for failed in status.failed {

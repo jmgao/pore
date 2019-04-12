@@ -89,7 +89,7 @@ fn parse_target(target: &str) -> Result<(String, String), Error> {
 }
 
 fn cmd_clone(
-  config: Config,
+  config: &Config,
   mut pool: &mut Pool,
   target: &str,
   directory: Option<&str>,
@@ -132,7 +132,7 @@ fn cmd_clone(
 }
 
 fn cmd_sync(
-  config: Config,
+  config: &Config,
   mut pool: &mut Pool,
   tree: &mut Tree,
   sync_under: Option<Vec<&str>>,
@@ -144,7 +144,7 @@ fn cmd_sync(
   tree.sync(&config, &mut pool, &depot, sync_under, fetch, checkout)
 }
 
-fn cmd_start(config: Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
+fn cmd_start(config: &Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
   tree.start(&config, &depot, &remote_config, branch_name, &directory)
@@ -166,7 +166,7 @@ fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
 }
 
 fn cmd_upload(
-  config: Config,
+  config: &Config,
   pool: &mut Pool,
   tree: &mut Tree,
   upload_under: Option<Vec<&str>>,
@@ -181,7 +181,7 @@ fn cmd_upload(
   presubmit_ready: bool,
 ) -> Result<i32, Error> {
   tree.upload(
-    &config,
+    config,
     pool,
     upload_under,
     current_branch,
@@ -196,29 +196,29 @@ fn cmd_upload(
   )
 }
 
-fn cmd_prune(config: Config, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
+fn cmd_prune(config: &Config, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  tree.prune(&config, &mut pool, &depot)
+  tree.prune(config, &mut pool, &depot)
 }
 
 fn cmd_forall(
-  config: Config,
+  config: &Config,
   mut pool: &mut Pool,
   tree: &mut Tree,
   forall_under: Option<Vec<&str>>,
   command: &str,
 ) -> Result<i32, Error> {
-  tree.forall(&config, &mut pool, forall_under, command)
+  tree.forall(config, &mut pool, forall_under, command)
 }
 
 fn cmd_preupload(
-  config: Config,
+  config: &Config,
   mut pool: &mut Pool,
   tree: &mut Tree,
   preupload_under: Option<Vec<&str>>,
 ) -> Result<i32, Error> {
-  tree.preupload(&config, &mut pool, preupload_under)
+  tree.preupload(config, &mut pool, preupload_under)
 }
 
 fn main() {
@@ -409,7 +409,7 @@ fn main() {
       ("init", Some(submatches)) => {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(
-          config,
+          &config,
           &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           Some("."),
@@ -421,7 +421,7 @@ fn main() {
       ("clone", Some(submatches)) => {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(
-          config,
+          &config,
           &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           submatches.value_of("DIRECTORY"),
@@ -435,7 +435,7 @@ fn main() {
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let sync_under = submatches.values_of("PATH").map(|values| values.collect());
         cmd_sync(
-          config,
+          &config,
           &mut pool,
           &mut tree,
           sync_under,
@@ -453,21 +453,21 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let sync_under = submatches.values_of("PATH").map(|values| values.collect());
-        cmd_sync(config, &mut pool, &mut tree, sync_under, fetch, CheckoutType::Checkout)
+        cmd_sync(&config, &mut pool, &mut tree, sync_under, fetch, CheckoutType::Checkout)
       }
 
       ("start", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let branch_name = submatches.value_of("BRANCH").unwrap();
-        cmd_start(config, &mut tree, branch_name, &cwd)
+        cmd_start(&config, &mut tree, branch_name, &cwd)
       }
 
       ("upload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         cmd_upload(
-          config,
+          &config,
           &mut pool,
           &mut tree,
           submatches.values_of("PATH").map(|values| values.collect()),
@@ -486,7 +486,7 @@ fn main() {
       ("prune", Some(_submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        cmd_prune(config, &mut pool, &mut tree)
+        cmd_prune(&config, &mut pool, &mut tree)
       }
 
       ("status", Some(submatches)) => {
@@ -494,7 +494,7 @@ fn main() {
         let tree = Tree::find_from_path(cwd.clone())?;
         let status_under = submatches.values_of("PATH").map(|values| values.collect());
 
-        let results = tree.status(config, &mut pool, status_under)?;
+        let results = tree.status(&config, &mut pool, status_under)?;
         let mut dirty = false;
         for result in results.successful {
           let project_name = &result.name;
@@ -544,7 +544,7 @@ fn main() {
         let output = submatches.value_of("OUTPUT");
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd.clone())?;
-        tree.generate_manifest(config, &mut pool, output)
+        tree.generate_manifest(&config, &mut pool, output)
       }
 
       ("forall", Some(submatches)) => {
@@ -554,14 +554,14 @@ fn main() {
         let command = submatches
           .value_of("COMMAND")
           .ok_or_else(|| format_err!("no commands specified"))?;
-        cmd_forall(config, &mut pool, &mut tree, forall_under, command)
+        cmd_forall(&config, &mut pool, &mut tree, forall_under, command)
       }
 
       ("preupload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let preupload_under = submatches.values_of("PATH").map(|values| values.collect());
-        cmd_preupload(config, &mut pool, &mut tree, preupload_under)
+        cmd_preupload(&config, &mut pool, &mut tree, preupload_under)
       }
 
       ("config", Some(_submatches)) => {
