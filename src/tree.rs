@@ -236,19 +236,17 @@ fn summarize_upload(
   let commits = find_independent_commits(&repo, &src_commit, &dst_commit)?;
 
   let is_aosp = dst_remote == "aosp";
-  let mut lines = vec![
-    format!(
-      "Upload {} commit{} from branch {} of project {}",
-      ahead,
-      if commits.len() == 1 { "" } else { "s" },
-      BRANCH_STYLE.apply_to(src_branch_name),
-      PROJECT_STYLE.apply_to(project_name),
-    ),
-  ];
+  let mut lines = vec![format!(
+    "Upload {} commit{} from branch {} of project {}",
+    ahead,
+    if commits.len() == 1 { "" } else { "s" },
+    BRANCH_STYLE.apply_to(src_branch_name),
+    PROJECT_STYLE.apply_to(project_name),
+  )];
 
-  for commit_oid in commits {
+  for commit_oid in &commits {
     let commit = repo
-      .find_commit(commit_oid)
+      .find_commit(*commit_oid)
       .context(format_err!("could not find commit matching {}", commit_oid))?;
     lines.push(format!(
       "  {:.10} {}",
@@ -258,6 +256,11 @@ fn summarize_upload(
         .ok_or_else(|| format_err!("commit message for {} is not valid UTF-8", commit.id()))?
     ))
   }
+
+  if commits.is_empty() {
+    bail!("no commits to upload");
+  }
+
   lines.push(format!(
     "to {}{}{} [y/N]? ",
     if is_aosp {
@@ -1189,30 +1192,36 @@ impl Tree {
             .context("failed to peel upstream object to commit")?;
 
           let commits = util::find_independent_commits(&repo, &current_head, &upstream_commit)?;
+          if commits.is_empty() {
+            Ok(PresubmitResult {
+              rc: 0,
+              output: Vec::new(),
+            })
+          } else {
+            let mut cmd = std::process::Command::new(hook_path.deref().clone());
+            cmd.current_dir(&project_path);
+            cmd.arg("--project").arg(&project_path);
 
-          let mut cmd = std::process::Command::new(hook_path.deref().clone());
-          cmd.current_dir(&project_path);
-          cmd.arg("--project").arg(&project_path);
-
-          for commit in commits {
-            cmd.arg(format!("{}", commit));
-          }
-
-          let result = cmd.output()?;
-
-          // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
-          //       stdout and stderr being the same pipe, to order their output chronologically.
-          let mut output = result.stdout;
-          if !result.stderr.is_empty() {
-            if !output.is_empty() {
-              output.push('\n' as u8);
+            for commit in commits {
+              cmd.arg(format!("{}", commit));
             }
-            output.extend(&result.stderr);
+
+            let result = cmd.output()?;
+
+            // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
+            //       stdout and stderr being the same pipe, to order their output chronologically.
+            let mut output = result.stdout;
+            if !result.stderr.is_empty() {
+              if !output.is_empty() {
+                output.push('\n' as u8);
+              }
+              output.extend(&result.stderr);
+            }
+
+            let rc = result.status.code().unwrap();
+
+            Ok(PresubmitResult { rc, output })
           }
-
-          let rc = result.status.code().unwrap();
-
-          Ok(PresubmitResult { rc, output })
         },
       );
     }
