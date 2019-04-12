@@ -67,7 +67,7 @@ mod util;
 use config::Config;
 use manifest::Manifest;
 use pool::Pool;
-use tree::{CheckoutType, FileState, FetchType, GroupFilter, Tree};
+use tree::{CheckoutType, FetchType, FileState, GroupFilter, Tree};
 
 lazy_static! {
   static ref AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().green() };
@@ -225,7 +225,7 @@ fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, 
   let last_enabled_index = matches.indices_of(enabled_name).map(Iterator::max);
   let last_disabled_index = matches.indices_of(disabled_name).map(Iterator::max);
   match (last_enabled_index, last_disabled_index) {
-    (Some(enabled), Some(disabled)) =>  Some(enabled > disabled),
+    (Some(enabled), Some(disabled)) => Some(enabled > disabled),
     (Some(_enabled), None) => Some(true),
     (None, Some(_disabled)) => Some(false),
     (None, None) => None,
