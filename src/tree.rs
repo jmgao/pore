@@ -200,6 +200,7 @@ fn summarize_upload(
   repo: &git2::Repository,
   dst_remote: &str,
   dst_branch_name: &str,
+  autosubmit: bool,
 ) -> Result<(), Error> {
   let head = repo.head().context("could not determine HEAD")?;
   ensure!(head.is_branch(), "expected HEAD to refer to a branch");
@@ -262,7 +263,7 @@ fn summarize_upload(
   }
 
   lines.push(format!(
-    "to {}{}{} [y/N]? ",
+    "to {}{}{} {}[y/N]? ",
     if is_aosp {
       AOSP_REMOTE_STYLE.apply_to(dst_remote)
     } else {
@@ -270,6 +271,11 @@ fn summarize_upload(
     },
     SLASH_STYLE.apply_to("/"),
     BRANCH_STYLE.apply_to(dst_branch_name),
+    if autosubmit {
+      format!("({}) ", console::style("autosubmit enabled").red().bold())
+    } else {
+      "".into()
+    }
   ));
 
   print!("{}", lines.join("\n"));
@@ -885,7 +891,7 @@ impl Tree {
         println!();
       }
 
-      summarize_upload(&project.project_name, &repo, &remote_name, &dest_branch)?;
+      summarize_upload(&project.project_name, &repo, &remote_name, &dest_branch, autosubmit)?;
 
       // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
       // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
