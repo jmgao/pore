@@ -221,6 +221,17 @@ fn cmd_preupload(
   tree.preupload(config, &mut pool, preupload_under)
 }
 
+fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, disabled_name: &str) -> Option<bool> {
+  let last_enabled_index = matches.indices_of(enabled_name).map(Iterator::max);
+  let last_disabled_index = matches.indices_of(disabled_name).map(Iterator::max);
+  match (last_enabled_index, last_disabled_index) {
+    (Some(enabled), Some(disabled)) =>  Some(enabled > disabled),
+    (Some(_enabled), None) => Some(true),
+    (None, Some(_disabled)) => Some(false),
+    (None, None) => None,
+  }
+}
+
 fn main() {
   let app = clap_app!(pore =>
     (version: crate_version!())
@@ -304,8 +315,10 @@ fn main() {
       (@arg PRIVATE: --private "upload as private change")
       (@arg WIP: --wip "upload as work in progress change")
       (@arg BRANCH_NAME_AS_TOPIC: -t "use local branch name as topic")
-      (@arg AUTOSUBMIT: --autosubmit "enable autosubmit")
-      (@arg PRESUBMIT_READY: --presubmit "queue the change for presubmit")
+      (@arg AUTOSUBMIT: --autosubmit +multiple "enable autosubmit")
+      (@arg NO_AUTOSUBMIT: --("no-autosubmit") +multiple "do not enable autosubmit")
+      (@arg PRESUBMIT: --presubmit +multiple "queue the change for presubmit")
+      (@arg NO_PRESUBMIT: --("no-presubmit") +multiple "do not queue the change for presubmit")
     )
     (@subcommand prune =>
       (about: "prune branches that have been merged")
@@ -466,6 +479,9 @@ fn main() {
       ("upload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
+        let autosubmit = get_overridable_option_value(&submatches, "AUTOSUBMIT", "NO_AUTOSUBMIT");
+        let presubmit = get_overridable_option_value(&submatches, "PRESUBMIT", "NO_PRESUBMIT");
+
         cmd_upload(
           &config,
           &mut pool,
@@ -478,8 +494,8 @@ fn main() {
           submatches.is_present("PRIVATE"),
           submatches.is_present("WIP"),
           submatches.is_present("BRANCH_NAME_AS_TOPIC"),
-          submatches.is_present("AUTOSUBMIT"),
-          submatches.is_present("PRESUBMIT_READY"),
+          autosubmit.unwrap_or(config.autosubmit),
+          presubmit.unwrap_or(config.presubmit),
         )
       }
 

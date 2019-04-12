@@ -27,8 +27,10 @@ use failure::ResultExt;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-  remotes: Vec<RemoteConfig>,
-  depots: BTreeMap<String, DepotConfig>,
+  pub autosubmit: bool,
+  pub presubmit: bool,
+  pub remotes: Vec<RemoteConfig>,
+  pub depots: BTreeMap<String, DepotConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,13 +42,15 @@ pub struct RemoteConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct DepotConfig {
-  path: String,
+pub struct DepotConfig {
+  pub path: String,
 }
 
 impl Default for Config {
   fn default() -> Config {
     Config {
+      autosubmit: false,
+      presubmit: false,
       remotes: vec![
         RemoteConfig {
           name: "aosp".into(),
