@@ -31,5 +31,3 @@ git2 = "0.8"
 
 console = "0.7"
 indicatif = "0.11"
-
-clt = "0.0.6"

@@ -195,12 +195,12 @@ pub struct ProjectStatus {
   pub files: Vec<FileStatus>,
 }
 
-fn upload_summary(
+fn summarize_upload(
   project_name: &str,
   repo: &git2::Repository,
   dst_remote: &str,
   dst_branch_name: &str,
-) -> Result<String, Error> {
+) -> Result<(), Error> {
   let head = repo.head().context("could not determine HEAD")?;
   ensure!(head.is_branch(), "expected HEAD to refer to a branch");
   let src_branch = git2::Branch::wrap(head);
@@ -224,21 +224,6 @@ fn upload_summary(
       dst_branch_name
     ))?;
 
-  let is_aosp = dst_remote == "aosp";
-  let mut lines = vec![format!(
-    "pushing {} commits from branch {} of project {} to {}{}{}",
-    ahead,
-    BRANCH_STYLE.apply_to(src_branch_name),
-    PROJECT_STYLE.apply_to(project_name),
-    if is_aosp {
-      AOSP_REMOTE_STYLE.apply_to(dst_remote)
-    } else {
-      NON_AOSP_REMOTE_STYLE.apply_to(dst_remote)
-    },
-    SLASH_STYLE.apply_to("/"),
-    BRANCH_STYLE.apply_to(dst_branch_name),
-  )];
-
   let src_commit = src_branch
     .get()
     .peel_to_commit()
@@ -248,21 +233,55 @@ fn upload_summary(
     dst_remote,
     dst_branch_name
   ))?;
-
   let commits = find_independent_commits(&repo, &src_commit, &dst_commit)?;
+
+  let is_aosp = dst_remote == "aosp";
+  let mut lines = vec![
+    format!(
+      "Upload {} commit{} from branch {} of project {}",
+      ahead,
+      if commits.len() == 1 { "" } else { "s" },
+      BRANCH_STYLE.apply_to(src_branch_name),
+      PROJECT_STYLE.apply_to(project_name),
+    ),
+  ];
+
   for commit_oid in commits {
     let commit = repo
       .find_commit(commit_oid)
       .context(format_err!("could not find commit matching {}", commit_oid))?;
     lines.push(format!(
-      "{:.10} {}",
+      "  {:.10} {}",
       console::style(commit.id()).cyan(),
       commit
         .summary()
         .ok_or_else(|| format_err!("commit message for {} is not valid UTF-8", commit.id()))?
     ))
   }
-  Ok(lines.join("\n"))
+  lines.push(format!(
+    "to {}{}{} [y/N]? ",
+    if is_aosp {
+      AOSP_REMOTE_STYLE.apply_to(dst_remote)
+    } else {
+      NON_AOSP_REMOTE_STYLE.apply_to(dst_remote)
+    },
+    SLASH_STYLE.apply_to("/"),
+    BRANCH_STYLE.apply_to(dst_branch_name),
+  ));
+
+  print!("{}", lines.join("\n"));
+  std::io::stdout().flush()?;
+
+  let line = util::read_line()?;
+  match line.as_str() {
+    "y" | "Y" => {
+      // Print an extra newline to separate gerrit's output from the confirmation prompt.
+      println!();
+      Ok(())
+    },
+
+    _ => Err(format_err!("upload aborted by user")),
+  }
 }
 
 impl Tree {
@@ -858,11 +877,12 @@ impl Tree {
           )
         })?;
 
-      let summary = upload_summary(&project.project_name, &repo, &remote_name, &dest_branch)?;
-      println!("{}", summary);
-      if !clt::confirm("upload patches to Gerrit?", false, "?\n", true) {
-        return Err(format_err!("upload aborted by user"));
+      if !no_verify {
+        // Separate the upload prompt from preupload hook output.
+        println!();
       }
+
+      summarize_upload(&project.project_name, &repo, &remote_name, &dest_branch)?;
 
       // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
       // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
