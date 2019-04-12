@@ -215,25 +215,23 @@ fn summarize_upload(
       format!("{}/{}", dst_remote, dst_branch_name).as_str(),
       git2::BranchType::Remote,
     )
-    .context(format_err!("could not find branch {}", dst_branch_name))?;
+    .context(format!("could not find branch {}", dst_branch_name))?;
 
   let (ahead, _behind) = repo
     .graph_ahead_behind(branch_to_commit(&src_branch)?.id(), branch_to_commit(&dst_branch)?.id())
-    .context(format_err!(
+    .context(format!(
       "could not determine state of {} against {}",
-      src_branch_name,
-      dst_branch_name
+      src_branch_name, dst_branch_name
     ))?;
 
   let src_commit = src_branch
     .get()
     .peel_to_commit()
-    .context(format_err!("failed to get commit for {}", src_branch_name))?;
-  let dst_commit = dst_branch.get().peel_to_commit().context(format_err!(
-    "failed to get commit for {}/{}",
-    dst_remote,
-    dst_branch_name
-  ))?;
+    .context(format!("failed to get commit for {}", src_branch_name))?;
+  let dst_commit = dst_branch
+    .get()
+    .peel_to_commit()
+    .context(format!("failed to get commit for {}/{}", dst_remote, dst_branch_name))?;
   let commits = find_independent_commits(&repo, &src_commit, &dst_commit)?;
 
   let is_aosp = dst_remote == "aosp";
@@ -248,7 +246,7 @@ fn summarize_upload(
   for commit_oid in &commits {
     let commit = repo
       .find_commit(*commit_oid)
-      .context(format_err!("could not find commit matching {}", commit_oid))?;
+      .context(format!("could not find commit matching {}", commit_oid))?;
     lines.push(format!(
       "  {:.10} {}",
       console::style(commit.id()).cyan(),
@@ -287,7 +285,7 @@ fn summarize_upload(
       // Print an extra newline to separate gerrit's output from the confirmation prompt.
       println!();
       Ok(())
-    },
+    }
 
     _ => Err(format_err!("upload aborted by user")),
   }
@@ -400,11 +398,11 @@ impl Tree {
 
     // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
     // but repo doesn't handle this either.
-    let tree_root = std::fs::canonicalize(&self.path).context(format_err!("failed to canonicalize tree path"))?;
+    let tree_root = std::fs::canonicalize(&self.path).context("failed to canonicalize tree path")?;
     let mut paths = Vec::new();
     for path in under.unwrap_or_default() {
       let requested_path =
-        std::fs::canonicalize(&path).context(format_err!("failed to canonicalize requested path '{}'", path))?;
+        std::fs::canonicalize(&path).context(format!("failed to canonicalize requested path '{}'", path))?;
       paths.push(
         pathdiff::diff_paths(&requested_path, &tree_root)
           .ok_or_else(|| format_err!("failed to calculate path diff for {}", path))?,
@@ -481,7 +479,7 @@ impl Tree {
           if project_path.exists() {
             depot
               .update_remote_refs(&remote_config, &project_name, &project_path)
-              .context(format_err!("failed to update remote refs"))?;
+              .context("failed to update remote refs")?;
 
             let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
 
@@ -493,10 +491,8 @@ impl Tree {
             // try to perform the equivalent of `git pull --rebase`.
             //
             // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
-            let head_detached = repo
-              .head_detached()
-              .context(format_err!("failed to check if HEAD is detached"))?;
-            let current_head = repo.head().context(format_err!("failed to get HEAD"))?;
+            let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
+            let current_head = repo.head().context("failed to get HEAD")?;
 
             if !head_detached {
               let branch_name = current_head
@@ -523,9 +519,7 @@ impl Tree {
                   .checkout_tree(&new_head, None)
                   .context(format!("failed to checkout to {:?}", new_head))?;
 
-                repo
-                  .set_head_detached(new_head.id())
-                  .context(format_err!("failed to detach HEAD"))?;
+                repo.set_head_detached(new_head.id()).context("failed to detach HEAD")?;
               }
             }
           } else {
@@ -543,7 +537,7 @@ impl Tree {
             let symlink_path = hooks_dir.join(filename);
             let _ = std::fs::remove_file(&symlink_path);
             create_symlink(&target, &symlink_path)
-              .context(format_err!("failed to create symlink at {:?}", &symlink_path))?;
+              .context(format!("failed to create symlink at {:?}", &symlink_path))?;
           }
 
           Ok(())
@@ -606,13 +600,13 @@ impl Tree {
   pub fn update_hooks(&self) -> Result<(), Error> {
     // Just always do this, since it's cheap.
     let hooks_dir = self.path.join(".pore").join("hooks");
-    std::fs::create_dir_all(&hooks_dir).context(format_err!("failed to create hooks directory"))?;
+    std::fs::create_dir_all(&hooks_dir).context("failed to create hooks directory")?;
     for (filename, contents) in hooks::hooks() {
       let path = hooks_dir.join(filename);
-      let mut file = std::fs::File::create(&path).context(format_err!("failed to open hook at {:?}", path))?;
+      let mut file = std::fs::File::create(&path).context(format!("failed to open hook at {:?}", path))?;
       file
         .write_all(contents.as_bytes())
-        .context(format_err!("failed to create hook at {:?}", path))?;
+        .context(format!("failed to create hook at {:?}", path))?;
       let mut permissions = file.metadata()?.permissions();
       permissions.set_mode(0o700);
       file.set_permissions(permissions)?;
@@ -621,7 +615,7 @@ impl Tree {
   }
 
   pub fn ensure_repo_compat(&self) -> Result<(), Error> {
-    std::fs::create_dir_all(self.path.join(".repo")).context(format_err!("failed to create dummy .repo dir"))?;
+    std::fs::create_dir_all(self.path.join(".repo")).context("failed to create dummy .repo dir")?;
 
     // Create symlinks for manifests and manifest.xml.
     create_symlink("../.pore/manifest", self.path.join(".repo").join("manifests"))?;
@@ -800,7 +794,7 @@ impl Tree {
 
     let mut branch = repo
       .branch(&branch_name, &commit, false)
-      .context(format_err!("failed to create branch {}", branch_name))?;
+      .context(format!("failed to create branch {}", branch_name))?;
     branch
       .set_upstream(Some(&format!("{}/{}", remote_config.name, revision)))
       .context("failed to set branch upstream")?;
@@ -808,7 +802,7 @@ impl Tree {
     repo.checkout_tree(&object, None)?;
     repo
       .set_head(&format!("refs/heads/{}", branch_name))
-      .context(format_err!("failed to set HEAD to {}", branch_name))?;
+      .context(format!("failed to set HEAD to {}", branch_name))?;
 
     Ok(0)
   }
@@ -852,10 +846,7 @@ impl Tree {
       let repo = git2::Repository::open(self.path.join(&project.project_path))
         .context("failed to open repository".to_string())?;
 
-      if repo
-        .head_detached()
-        .context(format_err!("failed to check if HEAD is detached"))?
-      {
+      if repo.head_detached().context("failed to check if HEAD is detached")? {
         bail!("cannot upload from detached HEAD")
       }
 
@@ -1114,13 +1105,13 @@ impl Tree {
   }
 
   pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
-    let manifest = self.read_manifest().context(format_err!("failed to read manifest"))?;
+    let manifest = self.read_manifest().context("failed to read manifest")?;
     let remote_config = config
       .find_remote(&self.config.remote)
-      .context(format_err!("failed to find remote {}", self.config.remote))?;
+      .context(format!("failed to find remote {}", self.config.remote))?;
     let projects = self
       .collect_manifest_projects(&manifest, under)
-      .context(format_err!("failed to collect manifest projects"))?;
+      .context("failed to collect manifest projects")?;
 
     let hook_project_name = match manifest.repo_hooks {
       Some(hooks) => {
@@ -1140,7 +1131,7 @@ impl Tree {
     // repo-hooks looks for a .repo directory, so make one.
     self
       .ensure_repo_compat()
-      .context(format_err!("failed to create repo compatibility files"))?;
+      .context("failed to create repo compatibility files")?;
 
     let mut hook_project = None;
     for (_, project) in &manifest.projects {
@@ -1188,9 +1179,9 @@ impl Tree {
 
           let current_head = repo
             .head()
-            .context(format_err!("failed to get HEAD"))?
+            .context("failed to get HEAD")?
             .peel_to_commit()
-            .context(format_err!("failed to peel HEAD to commit"))?;
+            .context("failed to peel HEAD to commit")?;
 
           let upstream_object = util::parse_revision(&repo, &remote_config.name, &project.revision)?;
           let upstream_commit = upstream_object

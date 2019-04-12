@@ -22,10 +22,9 @@ pub fn parse(data: &str) -> Result<Manifest, Error> {
 
   let mut buf = Vec::new();
   loop {
-    let event = reader.read_event(&mut buf).context(format_err!(
-      "failed to parse XML at position {}",
-      reader.buffer_position()
-    ))?;
+    let event = reader
+      .read_event(&mut buf)
+      .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => {
@@ -70,10 +69,9 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
   let mut manifest = Manifest::default();
   let mut buf = Vec::new();
   loop {
-    let event = reader.read_event(&mut buf).context(format_err!(
-      "failed to parse XML at position {}",
-      reader.buffer_position()
-    ))?;
+    let event = reader
+      .read_event(&mut buf)
+      .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => {
@@ -237,10 +235,9 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
   if has_children {
     let mut buf = Vec::new();
     loop {
-      let event = reader.read_event(&mut buf).context(format_err!(
-        "failed to parse XML at position {}",
-        reader.buffer_position()
-      ))?;
+      let event = reader
+        .read_event(&mut buf)
+        .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
       match event {
         Event::Start(e) => bail!(

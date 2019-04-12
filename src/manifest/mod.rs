@@ -105,7 +105,7 @@ pub struct RepoHooks {
 
 impl Manifest {
   pub fn parse(data: &[u8]) -> Result<Manifest, Error> {
-    let data_str = std::str::from_utf8(data).context(format_err!("invalid UTF-8 in manifest"))?;
+    let data_str = std::str::from_utf8(data).context("invalid UTF-8 in manifest")?;
     parser::parse(data_str)
   }
 
