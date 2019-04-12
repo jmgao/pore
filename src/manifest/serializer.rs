@@ -1,4 +1,4 @@
-use super::{Default, FileOperation, Manifest, Project, Remote};
+use super::{FileOperation, Manifest};
 use std::io::Write;
 
 use failure::{Error, ResultExt};
