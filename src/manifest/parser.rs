@@ -149,8 +149,8 @@ fn parse_remote(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Remote, Er
       b"alias" => populate_option!(remote.alias, value),
       b"fetch" => populate_option!(fetch, value),
       b"review" => populate_option!(remote.review, value),
-      key => bail!(
-        "unexpected attribute in <remote>: {}",
+      key => eprintln!(
+        "warning: unexpected attribute in <remote>: {}",
         std::str::from_utf8(key).unwrap_or("???")
       ),
     }
@@ -175,8 +175,8 @@ fn parse_default(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Default, 
       b"remote" => populate_option!(default.remote, value),
       b"sync-j" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-j")?),
       b"sync-c" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-c")?),
-      key => bail!(
-        "unexpected attribute in <default>: {}",
+      key => eprintln!(
+        "warning: unexpected attribute in <default>: {}",
         std::str::from_utf8(key).unwrap_or("???")
       ),
     }
@@ -192,8 +192,8 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<M
     let value = attribute.unescape_and_decode_value(&reader)?;
     match attribute.key {
       b"url" => populate_option!(url, value),
-      key => bail!(
-        "unexpected attribute in <manifest-server>: {}",
+      key => eprintln!(
+        "warning: unexpected attribute in <manifest-server>: {}",
         std::str::from_utf8(key).unwrap_or("???")
       ),
     }
@@ -222,8 +222,8 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
         value.parse::<u32>().context("failed to parse clone-depth")?
       ),
 
-      key => bail!(
-        "unexpected attribute in <project>: {}",
+      key => eprintln!(
+        "warning: unexpected attribute in <project>: {}",
         std::str::from_utf8(key).unwrap_or("???")
       ),
     }
@@ -289,8 +289,8 @@ fn parse_file_operation(event: &BytesStart, reader: &Reader<&[u8]>, copy: bool) 
     match attribute.key {
       b"src" => populate_option!(src, value),
       b"dest" => populate_option!(dst, value),
-      key => bail!(
-        "unexpected attribute in <{}>: {}",
+      key => eprintln!(
+        "warning: unexpected attribute in <{}>: {}",
         op_name,
         std::str::from_utf8(key).unwrap_or("???")
       ),
@@ -321,8 +321,8 @@ fn parse_repo_hooks(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<RepoHo
     match attribute.key {
       b"in-project" => populate_option!(hooks.in_project, value),
       b"enabled-list" => populate_option!(hooks.enabled_list, value),
-      key => bail!(
-        "unexpected attribute in <repo-hooks>: {}",
+      key => eprintln!(
+        "warning: unexpected attribute in <repo-hooks>: {}",
         std::str::from_utf8(key).unwrap_or("???")
       ),
     }
