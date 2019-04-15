@@ -27,10 +27,21 @@ use failure::ResultExt;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
+  #[serde(default = "default_autosubmit")]
   pub autosubmit: bool,
+
+  #[serde(default = "default_presubmit")]
   pub presubmit: bool,
   pub remotes: Vec<RemoteConfig>,
   pub depots: BTreeMap<String, DepotConfig>,
+}
+
+fn default_autosubmit() -> bool {
+  false
+}
+
+fn default_presubmit() -> bool {
+  false
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,8 +60,8 @@ pub struct DepotConfig {
 impl Default for Config {
   fn default() -> Config {
     Config {
-      autosubmit: false,
-      presubmit: false,
+      autosubmit: default_autosubmit(),
+      presubmit: default_presubmit(),
       remotes: vec![
         RemoteConfig {
           name: "aosp".into(),
