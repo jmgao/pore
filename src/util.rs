@@ -77,14 +77,15 @@ pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   let revision: &str = revision.as_ref();
 
   // Revision can point either directly to a git hash, or to a remote branch.
-  // Try the git hash first.
-  let object = match repo.revparse_single(&revision) {
+  // Try <remote>/<revision> first, then fall back to <revision>, so that in
+  // the case where there's a local master branch and a remote master branch,
+  // we correctly pick the remote one.
+  let object = match repo.revparse_single(&format!("{}/{}", remote, revision)) {
     Ok(obj) => obj,
     Err(_) => {
-      let spec = format!("{}/{}", remote, revision);
       repo
-        .revparse_single(&spec)
-        .context(format!("failed to find commit {} in {:?}", spec, repo.path()))?
+        .revparse_single(&revision)
+        .context(format!("failed to find revision {} from remote {} in {:?}", revision, remote, repo.path()))?
     }
   };
 
