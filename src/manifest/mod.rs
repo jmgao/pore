@@ -23,6 +23,9 @@ use failure::{Error, ResultExt};
 mod parser;
 mod serializer;
 
+// The repo manifest format is described at
+// https://gerrit.googlesource.com/git-repo/+/master/docs/manifest-format.md
+
 #[derive(Default, Debug)]
 pub struct Manifest {
   pub remotes: HashMap<String, Remote>,
