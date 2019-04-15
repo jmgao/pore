@@ -16,7 +16,7 @@ macro_rules! populate_from_option {
 pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), Error> {
   let mut root = Element::builder("manifest").build();
 
-  for (_, remote) in &manifest.remotes {
+  for remote in manifest.remotes.values() {
     let mut elem = Element::builder("remote");
     elem = elem.attr("name", &remote.name);
     elem = elem.attr("fetch", &remote.fetch);
@@ -49,7 +49,7 @@ pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), 
     root.append_child(elem.build());
   }
 
-  for (_, project) in &manifest.projects {
+  for project in manifest.projects.values() {
     let mut elem = Element::builder("project");
     populate_from_option!(elem, project.path, "path");
     populate_from_option!(elem, project.remote, "remote");

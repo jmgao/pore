@@ -222,7 +222,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
       b"remote" => populate_option!(project.remote, value),
       b"revision" => populate_option!(project.revision, value),
       b"dest-branch" => populate_option!(project.dest_branch, value),
-      b"groups" => populate_option!(project.groups, value.split(',').map(|s| s.to_string()).collect()),
+      b"groups" => populate_option!(project.groups, value.split(',').map(ToString::to_string).collect()),
       b"sync-c" => populate_option!(project.sync_c, value.parse::<u32>().context("failed to parse sync-c")?),
       b"clone-depth" => populate_option!(
         project.clone_depth,

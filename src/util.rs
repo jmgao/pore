@@ -156,7 +156,7 @@ pub fn find_independent_commits(
 pub fn read_line() -> Result<String, Error> {
   let mut line = String::new();
   std::io::stdin().read_line(&mut line)?;
-  if line.ends_with("\n") {
+  if line.ends_with('\n') {
     line.pop();
   }
   Ok(line)

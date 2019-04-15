@@ -40,7 +40,7 @@ impl TaskMonitor {
   fn started(&mut self, task_name: String) -> TaskMonitorId {
     let now = Instant::now();
     let counter = self.counter.fetch_add(1, Ordering::Relaxed);
-    let task_id = TaskMonitorId((now, task_name.into(), counter));
+    let task_id = TaskMonitorId((now, task_name, counter));
     self.tasks.insert(task_id.clone());
     self.update_progress_bar();
     task_id
