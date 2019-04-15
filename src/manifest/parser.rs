@@ -175,6 +175,13 @@ fn parse_default(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Default, 
       b"remote" => populate_option!(default.remote, value),
       b"sync-j" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-j")?),
       b"sync-c" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-c")?),
+
+      b"upstream" => {
+        // Ignored attribute. Used to limit the scope of the fetch with -c when a project is pinned
+        // to a revision, but we just fetch the revision itself rather than the full upstream
+        // branch like repo does.
+      }
+
       key => eprintln!(
         "warning: unexpected attribute in <default>: {}",
         std::str::from_utf8(key).unwrap_or("???")
@@ -221,6 +228,12 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
         project.clone_depth,
         value.parse::<u32>().context("failed to parse clone-depth")?
       ),
+
+      b"upstream" => {
+        // Unnecessary attribute. Used to limit the scope of the fetch with -c when a project is
+        // pinned to a revision, but we just fetch the revision itself rather than the full
+        // upstream branch like repo does.
+      }
 
       key => eprintln!(
         "warning: unexpected attribute in <project>: {}",
