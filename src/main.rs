@@ -396,10 +396,11 @@ fn main() {
   let config = match config::Config::from_path(&config_path) {
     Ok(config) => config,
 
-    Err(_err) => {
-      info!(
-        "failed to read config file at {:?}, falling back to default config",
-        config_path
+    Err(err) => {
+      eprintln!(
+        "warning: failed to read config file at {:?}, falling back to default config: {}",
+        config_path,
+        err,
       );
       config::Config::default()
     }
