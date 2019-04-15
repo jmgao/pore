@@ -17,6 +17,8 @@
 #![feature(fnbox)]
 #![feature(futures_api)]
 
+#![allow(clippy::too_many_arguments)]
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -153,10 +155,10 @@ fn cmd_start(config: &Config, tree: &mut Tree, branch_name: &str, directory: &Pa
 fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
   users
     .unwrap_or("")
-    .split(",")
+    .split(',')
     .filter(|r| !r.is_empty())
     .map(|r| {
-      if r.contains("@") {
+      if r.contains('@') {
         r.to_string()
       } else {
         format!("{}@google.com", r)
@@ -474,7 +476,7 @@ fn main() {
       ("fetch", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        let sync_under = submatches.values_of("PATH").map(|values| values.collect());
+        let sync_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_sync(
           &config,
           &mut pool,
@@ -493,7 +495,7 @@ fn main() {
         };
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        let sync_under = submatches.values_of("PATH").map(|values| values.collect());
+        let sync_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_sync(&config, &mut pool, &mut tree, sync_under, fetch, CheckoutType::Checkout)
       }
 
@@ -514,7 +516,7 @@ fn main() {
           &config,
           &mut pool,
           &mut tree,
-          submatches.values_of("PATH").map(|values| values.collect()),
+          submatches.values_of("PATH").map(Iterator::collect),
           submatches.is_present("CURRENT_BRANCH"),
           submatches.is_present("NO_VERIFY"),
           submatches.value_of("REVIEWERS"),
@@ -530,7 +532,7 @@ fn main() {
       ("prune", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        let prune_under = submatches.values_of("PATH").map(|values| values.collect());
+        let prune_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_prune(&config, &mut pool, &mut tree, prune_under)
       }
 
@@ -539,14 +541,14 @@ fn main() {
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let interactive = submatches.is_present("INTERACTIVE");
         let autosquash = submatches.is_present("AUTOSQUASH");
-        let rebase_under = submatches.values_of("PATH").map(|values| values.collect());
+        let rebase_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_rebase(&mut pool, &mut tree, interactive, autosquash, rebase_under)
       }
 
       ("status", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd.clone())?;
-        let status_under = submatches.values_of("PATH").map(|values| values.collect());
+        let status_under = submatches.values_of("PATH").map(Iterator::collect);
 
         let results = tree.status(&config, &mut pool, status_under)?;
         let mut dirty = false;
@@ -604,7 +606,7 @@ fn main() {
       ("forall", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        let forall_under = submatches.values_of("PATH").map(|values| values.collect());
+        let forall_under = submatches.values_of("PATH").map(Iterator::collect);
         let command = submatches
           .value_of("COMMAND")
           .ok_or_else(|| format_err!("no commands specified"))?;
@@ -614,7 +616,7 @@ fn main() {
       ("preupload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        let preupload_under = submatches.values_of("PATH").map(|values| values.collect());
+        let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_preupload(&config, &mut pool, &mut tree, preupload_under)
       }
 

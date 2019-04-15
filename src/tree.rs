@@ -65,7 +65,7 @@ impl GroupFilter {
       return true;
     }
 
-    let groups = project.groups.as_ref().map(|vec| vec.as_slice()).unwrap_or(&[]);
+    let groups = project.groups.as_ref().map(Vec::as_slice).unwrap_or(&[]);
 
     let mut included = false;
     let mut excluded = false;
@@ -393,7 +393,7 @@ impl Tree {
       .config
       .group_filters
       .as_ref()
-      .map(|vec| vec.as_slice())
+      .map(Vec::as_slice)
       .unwrap_or(&[]);
 
     // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
@@ -814,8 +814,8 @@ impl Tree {
     upload_under: Option<Vec<&str>>,
     current_branch: bool,
     no_verify: bool,
-    reviewers: &Vec<String>,
-    ccs: &Vec<String>,
+    reviewers: &[String],
+    ccs: &[String],
     private: bool,
     wip: bool,
     branch_name_as_topic: bool,
@@ -1297,7 +1297,7 @@ impl Tree {
       .context("failed to create repo compatibility files")?;
 
     let mut hook_project = None;
-    for (_, project) in &manifest.projects {
+    for project in manifest.projects.values() {
       if project.name == hook_project_name {
         hook_project = Some(project);
         break;
@@ -1373,7 +1373,7 @@ impl Tree {
             let mut output = result.stdout;
             if !result.stderr.is_empty() {
               if !output.is_empty() {
-                output.push('\n' as u8);
+                output.push(b'\n');
               }
               output.extend(&result.stderr);
             }
@@ -1405,17 +1405,15 @@ impl Tree {
           )
           .unwrap();
           rc = result.rc;
-        } else {
-          if !result.output.is_empty() {
-            writeln!(output, "{}:", console::style(&project_name).green().bold()).unwrap();
-          }
+        } else if !result.output.is_empty() {
+          writeln!(output, "{}:", console::style(&project_name).green().bold()).unwrap();
         }
         output.write_all(&result.output).unwrap();
         output
       })
       .filter(|vec| !vec.is_empty())
       .collect();
-    let _ = std::io::stdout().write_all(&outputs.join(&('\n' as u8)));
+    let _ = std::io::stdout().write_all(&outputs.join(&b'\n'));
 
     for failure in results.failed {
       println!(

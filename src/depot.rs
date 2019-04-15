@@ -164,7 +164,7 @@ impl Depot {
     }
 
     let refs_path = self.refs_mirror(&remote_config.name, project);
-    if let Err(_) = git2::Repository::open(&refs_path) {
+    if git2::Repository::open(&refs_path).is_err() {
       Depot::clone_alternates(&objects_path, &refs_path, true)?;
     }
 

@@ -87,15 +87,15 @@ pub enum FileOperation {
 impl FileOperation {
   pub fn src(&self) -> &str {
     match self {
-      FileOperation::LinkFile { src, dst: _ } => src,
-      FileOperation::CopyFile { src, dst: _ } => src,
+      FileOperation::LinkFile { src, .. } => src,
+      FileOperation::CopyFile { src, .. } => src,
     }
   }
 
   pub fn dst(&self) -> &str {
     match self {
-      FileOperation::LinkFile { src: _, dst } => dst,
-      FileOperation::CopyFile { src: _, dst } => dst,
+      FileOperation::LinkFile { dst, .. } => dst,
+      FileOperation::CopyFile { dst, .. } => dst,
     }
   }
 }
