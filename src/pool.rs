@@ -126,9 +126,9 @@ impl Pool {
         let task_monitor = Arc::clone(&task_monitor);
         self
           .thread_pool()
-          .spawn_with_handle(future::lazy(move |waker| {
+          .spawn_with_handle(future::lazy(move |context| {
             let task_id = task_monitor.lock().unwrap().started(task.name.clone());
-            let result = (task.task)(&waker);
+            let result = (task.task)(&context);
             task_monitor.lock().unwrap().finished(task_id);
             (task.name, result)
           }))
@@ -175,7 +175,7 @@ impl<T: Send> Job<T> {
     }
   }
 
-  pub fn add_task<N: Into<String>, F: FnOnce(&futures::task::Waker) -> Result<T, Error> + Send + 'static>(
+  pub fn add_task<N: Into<String>, F: FnOnce(&futures::task::Context) -> Result<T, Error> + Send + 'static>(
     &mut self,
     name: N,
     task: F,
@@ -190,7 +190,7 @@ impl<T: Send> Job<T> {
 
 struct Task<T: Send> {
   name: String,
-  task: Box<dyn FnBox(&futures::task::Waker) -> Result<T, Error> + Send>,
+  task: Box<dyn FnBox(&futures::task::Context) -> Result<T, Error> + Send>,
 }
 
 #[cfg(test)]
