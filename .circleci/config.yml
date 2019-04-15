@@ -10,7 +10,7 @@ jobs:
           command: git submodule update --init
       - run:
           name: Switch to nightly
-          command: rustup default nightly-2019-04-07
+          command: rustup default nightly
       - run:
           name: Install pkg-config
           command: apt-get install pkg-config
