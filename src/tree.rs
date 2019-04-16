@@ -815,7 +815,7 @@ impl Tree {
     current_branch: bool,
     no_verify: bool,
     reviewers: &Vec<String>,
-    cc: &Vec<String>,
+    ccs: &Vec<String>,
     private: bool,
     wip: bool,
     branch_name_as_topic: bool,
@@ -890,14 +890,14 @@ impl Tree {
       let mut cmd = std::process::Command::new("git");
       cmd.current_dir(self.path.join(&project.project_path)).arg("push");
 
-      if !reviewers.is_empty() {
+      for reviewer in reviewers {
         cmd.arg("-o");
-        cmd.arg(format!("r={}", reviewers.join(",")));
+        cmd.arg(format!("r={}", reviewer));
       }
 
-      if !cc.is_empty() {
+      for cc in ccs {
         cmd.arg("-o");
-        cmd.arg(format!("cc={}", cc.join(",")));
+        cmd.arg(format!("cc={}", cc));
       }
 
       if wip {
