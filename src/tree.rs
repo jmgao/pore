@@ -676,21 +676,24 @@ impl Tree {
           let src_path = self.path.join(&project.project_path).join(&op.src());
           let dst_path = self.path.join(&op.dst());
 
+          let base = dst_path
+            .parent()
+            .ok_or_else(|| format_err!("linkfile destination is the root?"))?;
+
           if let Err(err) = std::fs::remove_file(&dst_path) {
             if err.kind() != std::io::ErrorKind::NotFound {
               bail!("failed to unlink file {:?}: {}", dst_path, err);
             }
           }
 
+          let _ = std::fs::create_dir_all(&base)
+            .map_err(|err| eprintln!("warning: failed to create directory {:?}: {}", &base, err));
+
           match op {
             FileOperation::LinkFile { .. } => {
               // repo makes the symlinks as relative symlinks.
-              let base = dst_path
-                .parent()
-                .ok_or_else(|| format_err!("linkfile destination is the root?"))?;
               let target = pathdiff::diff_paths(&src_path, &base)
                 .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
-
               let _ = create_symlink(target, &dst_path)
                 .map_err(|err| eprintln!("warning: failed to create symlink at {:?}: {}", dst_path, err));
             }
