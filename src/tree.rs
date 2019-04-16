@@ -937,9 +937,15 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn prune(&self, _config: &Config, pool: &mut Pool, depot: &Depot) -> Result<i32, Error> {
+  pub fn prune(
+    &self,
+    _config: &Config,
+    pool: &mut Pool,
+    depot: &Depot,
+    prune_under: Option<Vec<&str>>,
+  ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, None)?;
+    let projects = self.collect_manifest_projects(&manifest, prune_under)?;
 
     let mut job = Job::with_name("pruning");
     let tree_root = Arc::new(self.path.clone());

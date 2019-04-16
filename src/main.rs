@@ -196,10 +196,15 @@ fn cmd_upload(
   )
 }
 
-fn cmd_prune(config: &Config, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
+fn cmd_prune(
+  config: &Config,
+  mut pool: &mut Pool,
+  tree: &mut Tree,
+  prune_under: Option<Vec<&str>>,
+) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  tree.prune(config, &mut pool, &depot)
+  tree.prune(config, &mut pool, &depot, prune_under)
 }
 
 fn cmd_forall(
@@ -322,6 +327,10 @@ fn main() {
     )
     (@subcommand prune =>
       (about: "prune branches that have been merged")
+      (@arg PATH: ...
+         "path(s) to prune\n\
+          defaults to all repositories in the tree"
+      )
     )
     (@subcommand status =>
       (about: "show working tree status across the entire tree")
@@ -399,8 +408,7 @@ fn main() {
     Err(err) => {
       eprintln!(
         "warning: failed to read config file at {:?}, falling back to default config: {}",
-        config_path,
-        err,
+        config_path, err,
       );
       config::Config::default()
     }
@@ -500,10 +508,11 @@ fn main() {
         )
       }
 
-      ("prune", Some(_submatches)) => {
+      ("prune", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        cmd_prune(&config, &mut pool, &mut tree)
+        let prune_under = submatches.values_of("PATH").map(|values| values.collect());
+        cmd_prune(&config, &mut pool, &mut tree, prune_under)
       }
 
       ("status", Some(submatches)) => {
