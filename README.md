@@ -16,8 +16,6 @@ and save it to `~/.pore.toml`.
 
 ### Caveats
 
-* `pore upload` is currently unimplemented: use `git push aosp foo:refs/for/master` instead (but be aware that repohooks
-  will be skipped).
 * `pore sync` currently does not warn when a project is removed from the manifest.
 
 ### License
