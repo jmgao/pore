@@ -9,10 +9,18 @@ a fresh checkout of a new tree takes on the order of one minute, instead of tens
 
 ### Installation and usage
 
-pore requires a nightly version of rust to compile. Follow the instructions at https://rustup.rs/, select nightly, and
-build pore with `cargo build --release`. By default, pore uses a configuration suited for AOSP development that stores
-its mirror in `~/.pore/android`. If you wish to change this, either use a symlink, or edit the output of `pore config`
-and save it to `~/.pore.toml`.
+pore currently requires a nightly version of rust to compile, due to the use of the not-yet-stabilized futures API.
+The following instructions probably work on a Debian-ish system:
+
+```sh
+sudo apt-get install -y build-essential ca-certificates curl git libssl-dev pkg-config ssh
+curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly-2019-04-16
+source $HOME/.cargo/env
+cargo install --git https://github.com/jmgao/pore --force
+```
+
+By default, pore uses a configuration suited for AOSP development that stores its mirror in `~/.pore/android`.
+If you wish to change this, either use a symlink, or edit the output of `pore config` and save it to `~/.pore.toml`.
 
 ### Caveats
 
