@@ -1052,7 +1052,7 @@ impl Tree {
       self.interactive_rebase(manifest, autosquash, projects[0].clone())
     } else {
       ensure!(!autosquash, "--autosquash is only valid with --interactive");
-      self.non_interactive_rebase(pool, projects)
+      self.non_interactive_rebase(pool, manifest, projects)
     }
   }
 
@@ -1104,8 +1104,91 @@ impl Tree {
     Ok(0)
   }
 
-  fn non_interactive_rebase(&self, _pool: &mut Pool, projects: Vec<ProjectInfo>) -> Result<i32, Error> {
-    Err(format_err!("not interactive rebase is not implemented"))
+  fn non_interactive_rebase(
+    &self,
+    pool: &mut Pool,
+    manifest: Manifest,
+    projects: Vec<ProjectInfo>,
+  ) -> Result<i32, Error> {
+    let mut job = Job::with_name("rebasing");
+    let tree_root = Arc::new(self.path.clone());
+    let manifest = Arc::new(manifest);
+    for project in projects {
+      let tree_root = Arc::clone(&tree_root);
+      let manifest = Arc::clone(&manifest);
+      job.add_task(project.project_name.clone(), move |_| -> Result<bool, Error> {
+        let path = tree_root.join(&project.project_path);
+        let repo =
+          git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
+
+        if repo.head_detached().context("failed to check if HEAD is detached")? {
+          // Don't rebase detached HEADs. This behavior matches repo.
+          return Ok(true);
+        }
+
+        let project_meta = manifest
+          .projects
+          .get(&PathBuf::from(&project.project_path))
+          .ok_or_else(|| format_err!("failed to find project {:?}", project.project_path))?;
+
+        let remote_name = project_meta
+          .remote
+          .as_ref()
+          .or_else(|| manifest.default.as_ref().and_then(|d| d.remote.as_ref()))
+          .ok_or_else(|| {
+            format_err!(
+              "project {:?} did not specify a dest_branch and manifest has no default revision",
+              project_meta
+            )
+          })?;
+
+        let dest_branch = project_meta
+          .revision
+          .as_ref()
+          .or_else(|| manifest.default.as_ref().and_then(|d| d.revision.as_ref()))
+          .ok_or_else(|| {
+            format_err!(
+              "project {:?} did not specify a dest_branch and manifest has no default revision",
+              project_meta
+            )
+          })?;
+
+        let output = std::process::Command::new("git")
+          .current_dir(&path)
+          .arg("rebase")
+          .arg(format!("{}/{}", remote_name, dest_branch))
+          .output()
+          .context("failed to spawn git rebase")?;
+
+        Ok(output.status.success())
+      })
+    }
+
+    let results = pool.execute(job);
+    let mut failed = false;
+    for error in results.failed {
+      eprintln!("{}: {}", error.name, error.result);
+      failed = true;
+    }
+
+    let conflicts: Vec<&ExecutionResult<bool>> = results.successful.iter().filter(|r| !r.result).collect();
+    if !conflicts.is_empty() {
+      failed = true;
+      println!(
+        "failed to rebase {} project{}:",
+        conflicts.len(),
+        if conflicts.len() == 1 { "" } else { "s" }
+      );
+      for conflict in conflicts {
+        println!("  {}", PROJECT_STYLE.clone().red().apply_to(&conflict.name));
+      }
+    }
+
+    if failed {
+      Ok(1)
+    } else {
+      Ok(0)
+    }
   }
 
   pub fn forall(
