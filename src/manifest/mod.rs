@@ -152,15 +152,8 @@ pub struct RepoHooks {
 }
 
 impl Manifest {
-  pub fn parse(data: &[u8]) -> Result<Manifest, Error> {
-    let data_str = std::str::from_utf8(data).context("invalid UTF-8 in manifest")?;
-    parser::parse(data_str)
-  }
-
-  pub fn parse_file(path: impl AsRef<Path>) -> Result<Manifest, Error> {
-    let path = path.as_ref();
-    let data = std::fs::read(path).context(format!("failed to read {:?}", path))?;
-    Manifest::parse(&data)
+  pub fn parse(directory: impl AsRef<Path>, filename: impl AsRef<str>) -> Result<Manifest, Error> {
+    parser::parse(directory.as_ref(), filename.as_ref())
   }
 
   pub fn serialize(&self, output: Box<dyn Write>) -> Result<(), Error> {

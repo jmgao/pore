@@ -16,12 +16,18 @@ macro_rules! populate_option {
   }};
 }
 
-pub fn parse(data: &str) -> Result<Manifest, Error> {
-  let mut manifest = None;
+pub(crate) fn parse(directory: &Path, filename: &str) -> Result<Manifest, Error> {
+  let mut manifest = Manifest::default();
+  parse_impl(&mut manifest, directory, filename)?;
+  Ok(manifest)
+}
 
-  let mut reader = Reader::from_str(data);
+fn parse_impl(manifest: &mut Manifest, directory: &Path, filename: &str) -> Result<(), Error> {
+  let path = directory.join(filename);
+  let mut reader = Reader::from_file(&path).context(format!("failed to read manifest file {:?}", path))?;
   reader.trim_text(true);
 
+  let mut found_manifest = false;
   let mut buf = Vec::new();
   loop {
     let event = reader
@@ -32,12 +38,14 @@ pub fn parse(data: &str) -> Result<Manifest, Error> {
       Event::Start(e) => {
         let tag_name = e.name();
         match tag_name {
-          b"manifest" => match manifest {
-            Some(_) => bail!("multiple manifest tags in manifest"),
-            None => {
-              manifest = Some(parse_manifest(&e, &mut reader)?);
+          b"manifest" => {
+            if found_manifest {
+              bail!("multiple manifest tags in manifest");
+            } else {
+              found_manifest = true;
+              parse_manifest(manifest, directory, &e, &mut reader)?;
             }
-          },
+          }
 
           _ => bail!(
             "unexpected start tag in manifest.xml: {}",
@@ -64,11 +72,18 @@ pub fn parse(data: &str) -> Result<Manifest, Error> {
     }
   }
 
-  Ok(manifest.ok_or_else(|| format_err!("failed to find a manifest tag"))?)
+  if !found_manifest {
+    bail!("failed to find a manifest tag in manifest");
+  }
+  Ok(())
 }
 
-fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result<Manifest, Error> {
-  let mut manifest = Manifest::default();
+fn parse_manifest(
+  manifest: &mut Manifest,
+  directory: &Path,
+  _event: &BytesStart,
+  reader: &mut Reader<impl BufRead>,
+) -> Result<(), Error> {
   let mut buf = Vec::new();
   loop {
     let event = reader
@@ -85,7 +100,7 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
           }
 
           b"project" => {
-            let project = parse_project(&e, &mut reader, true)?;
+            let project = parse_project(&e, reader, true)?;
             let path = PathBuf::from(project.path());
             if manifest.projects.contains_key(&path) {
               bail!("duplicate project {:?}", path);
@@ -101,8 +116,12 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
       }
 
       Event::Empty(e) => match e.name() {
+        b"include" => {
+          parse_include(manifest, &e, reader, directory)?;
+        }
+
         b"project" => {
-          let project = parse_project(&e, &mut reader, false)?;
+          let project = parse_project(&e, reader, false)?;
           let path = PathBuf::from(project.path());
           if manifest.projects.contains_key(&path) {
             bail!("duplicate project {:?}", path);
@@ -140,7 +159,7 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
     }
   }
 
-  Ok(manifest)
+  Ok(())
 }
 
 fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Result<String, Error> {
@@ -182,7 +201,39 @@ fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Resul
   Ok(result.unwrap_or_else(String::new))
 }
 
-fn parse_remote(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Remote, Error> {
+fn parse_include(
+  manifest: &mut Manifest,
+  event: &BytesStart,
+  reader: &Reader<impl BufRead>,
+  directory: &Path,
+) -> Result<(), Error> {
+  let mut filename = None;
+
+  for attribute in event.attributes() {
+    let attribute = attribute?;
+    let value = attribute.unescape_and_decode_value(&reader)?;
+    match attribute.key {
+      b"name" => populate_option!(filename, value),
+      key => eprintln!(
+        "warning: unexpected attribute in <include>: {}",
+        std::str::from_utf8(key).unwrap_or("???")
+      ),
+    }
+  }
+
+  match filename {
+    Some(filename) => {
+      if filename.contains('/') {
+        bail!("rejecting <include> filename that contains '/': {}", filename);
+      }
+      parse_impl(manifest, directory, &filename)
+    }
+
+    None => bail!("<include> has no filename"),
+  }
+}
+
+fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Remote, Error> {
   let mut remote = Remote::default();
   let mut name = None;
   let mut fetch = None;
@@ -211,7 +262,7 @@ fn parse_remote(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Remote, Er
   Ok(remote)
 }
 
-fn parse_default(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Default, Error> {
+fn parse_default(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Default, Error> {
   let mut default = Default::default();
 
   for attribute in event.attributes() {
@@ -239,7 +290,7 @@ fn parse_default(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Default, 
   Ok(default)
 }
 
-fn parse_manifest_server(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<ManifestServer, Error> {
+fn parse_manifest_server(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<ManifestServer, Error> {
   let mut url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
@@ -257,7 +308,7 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<M
   Ok(ManifestServer { url: url.unwrap() })
 }
 
-fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: bool) -> Result<Project, Error> {
+fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_children: bool) -> Result<Project, Error> {
   let mut project = Project::default();
   let mut name = None;
   for attribute in event.attributes() {
@@ -342,7 +393,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
   Ok(project)
 }
 
-fn parse_file_operation(event: &BytesStart, reader: &Reader<&[u8]>, copy: bool) -> Result<FileOperation, Error> {
+fn parse_file_operation(event: &BytesStart, reader: &Reader<impl BufRead>, copy: bool) -> Result<FileOperation, Error> {
   let op_name = if copy { "copyfile" } else { "linkfile" };
 
   let mut src = None;
@@ -377,7 +428,7 @@ fn parse_file_operation(event: &BytesStart, reader: &Reader<&[u8]>, copy: bool) 
   }
 }
 
-fn parse_repo_hooks(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<RepoHooks, Error> {
+fn parse_repo_hooks(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<RepoHooks, Error> {
   let mut hooks = RepoHooks::default();
   for attribute in event.attributes() {
     let attribute = attribute?;

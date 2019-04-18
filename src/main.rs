@@ -46,8 +46,6 @@ use std::path::{Path, PathBuf};
 use failure::Error;
 use failure::ResultExt;
 
-use clap::{Arg, SubCommand};
-
 #[macro_export]
 macro_rules! fatal {
   ($($tt:tt)*) => {{
@@ -425,12 +423,6 @@ fn main() {
     (@subcommand config =>
       (about: "prints the default configuration file")
     )
-  )
-  .subcommand(
-    SubCommand::with_name("parse-manifest")
-      .about("parse a manifest file and print it")
-      .setting(clap::AppSettings::Hidden)
-      .arg(Arg::with_name("PATH").takes_value(true).required(true)),
   );
 
   let matches = app.get_matches();
@@ -712,11 +704,6 @@ fn main() {
 
       ("config", Some(_submatches)) => {
         println!("{}", toml::to_string_pretty(&Config::default())?);
-        Ok(0)
-      }
-
-      ("parse-manifest", Some(submatches)) => {
-        println!("{:?}", Manifest::parse_file(submatches.value_of("PATH").unwrap())?);
         Ok(0)
       }
 
