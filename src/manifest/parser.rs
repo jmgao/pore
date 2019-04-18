@@ -1,3 +1,5 @@
+use std::io::BufRead;
+
 use failure::{Error, ResultExt};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
@@ -77,6 +79,11 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
       Event::Start(e) => {
         let tag_name = e.name();
         match tag_name {
+          b"notice" => {
+            // TODO: Actually print this?
+            parse_notice(&e, reader)?;
+          }
+
           b"project" => {
             let project = parse_project(&e, &mut reader, true)?;
             let path = PathBuf::from(project.path());
@@ -134,6 +141,45 @@ fn parse_manifest(_event: &BytesStart, mut reader: &mut Reader<&[u8]>) -> Result
   }
 
   Ok(manifest)
+}
+
+fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Result<String, Error> {
+  let mut buf = Vec::new();
+  let mut result = None;
+  loop {
+    let event = reader
+      .read_event(&mut buf)
+      .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
+
+    match event {
+      Event::Start(e) => bail!(
+        "unexpected start tag in <notice>: {}",
+        std::str::from_utf8(e.name()).unwrap_or("???")
+      ),
+
+      Event::Empty(e) => bail!(
+        "unexpected empty tag in <notice>: {}",
+        std::str::from_utf8(e.name()).unwrap_or("???")
+      ),
+
+      Event::End(_) => break,
+
+      Event::Comment(_) => {}
+
+      Event::Text(value) => {
+        ensure!(result.is_none(), "multiple text events in <notice>");
+        result = Some(value.unescape_and_decode(reader)?);
+      }
+
+      e => bail!(
+        "unexpected event in <notice> at position {}: {:?}",
+        reader.buffer_position(),
+        e
+      ),
+    }
+  }
+
+  Ok(result.unwrap_or_else(String::new))
 }
 
 fn parse_remote(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Remote, Error> {
@@ -268,6 +314,10 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<&[u8]>, has_children: b
           b"linkfile" => {
             let op = parse_file_operation(&e, &reader, false)?;
             project.file_operations.push(op);
+          }
+
+          b"annotation" => {
+            eprintln!("warning: unhandled <project> annotation");
           }
 
           _ => bail!(
