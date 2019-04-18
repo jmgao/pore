@@ -149,6 +149,7 @@ fn parse_remote(event: &BytesStart, reader: &Reader<&[u8]>) -> Result<Remote, Er
       b"alias" => populate_option!(remote.alias, value),
       b"fetch" => populate_option!(fetch, value),
       b"review" => populate_option!(remote.review, value),
+      b"revision" => populate_option!(remote.revision, value),
       key => eprintln!(
         "warning: unexpected attribute in <remote>: {}",
         std::str::from_utf8(key).unwrap_or("???")

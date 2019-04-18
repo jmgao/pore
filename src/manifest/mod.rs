@@ -41,6 +41,7 @@ pub struct Remote {
   pub alias: Option<String>,
   pub fetch: String,
   pub review: Option<String>,
+  pub revision: Option<String>,
 }
 
 #[derive(Default, Debug)]
@@ -75,6 +76,50 @@ pub struct Project {
 impl Project {
   pub fn path(&self) -> String {
     self.path.clone().unwrap_or_else(|| self.name.clone())
+  }
+
+  pub fn find_remote(&self, manifest: &Manifest) -> Result<String, Error> {
+    let remote_name = self
+      .remote
+      .as_ref()
+      .or_else(|| manifest.default.as_ref().and_then(|default| default.remote.as_ref()))
+      .ok_or_else(|| format_err!("project {} has no remote", self.name))?
+      .clone();
+
+    Ok(remote_name)
+  }
+
+  pub fn find_revision(&self, manifest: &Manifest) -> Result<String, Error> {
+    if let Some(revision) = &self.revision {
+      return Ok(revision.clone());
+    }
+
+    if let Some(default) = &manifest.default {
+      if let Some(revision) = &default.revision {
+        return Ok(revision.clone());
+      }
+    }
+
+    let remote_name = self.find_remote(manifest)?;
+    manifest
+      .remotes
+      .get(&remote_name)
+      .as_ref()
+      .and_then(|remote| remote.revision.as_ref())
+      .cloned()
+      .ok_or_else(|| format_err!("project {} has no revision", self.name))
+  }
+
+  pub fn find_dest_branch(&self, manifest: &Manifest) -> Result<String, Error> {
+    // repo seems to only look at project to calculate dest_branch, but that seems wrong.
+    let dest_branch = self
+      .dest_branch
+      .clone()
+      .ok_or_else(|| ())
+      .or_else(|_| self.find_revision(manifest))
+      .context(format!("project {} has no dest_branch or revision", self.name))?;
+
+    Ok(dest_branch.clone())
   }
 }
 

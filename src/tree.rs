@@ -871,14 +871,7 @@ impl Tree {
       .get(project_path)
       .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
 
-    // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
-    let revision = project.revision.clone().unwrap_or_else(|| {
-      manifest
-        .default
-        .and_then(|def| def.revision)
-        .unwrap_or_else(|| self.config.branch.clone())
-    });
-
+    let revision = project.find_revision(&manifest)?;
     let object = util::parse_revision(&repo, &remote_config.name, &revision)?;
     let commit = object.peel_to_commit().context("failed to peel object to commit")?;
 
@@ -953,27 +946,8 @@ impl Tree {
         .get(&PathBuf::from(&project.project_path))
         .ok_or_else(|| format_err!("failed to find project {:?}", project.project_path))?;
 
-      let remote_name = project_meta
-        .remote
-        .as_ref()
-        .or_else(|| manifest.default.as_ref().and_then(|d| d.remote.as_ref()))
-        .ok_or_else(|| {
-          format_err!(
-            "project {:?} did not specify a dest_branch and manifest has no default revision",
-            project_meta
-          )
-        })?;
-
-      let dest_branch_name = project_meta
-        .revision
-        .as_ref()
-        .or_else(|| manifest.default.as_ref().and_then(|d| d.revision.as_ref()))
-        .ok_or_else(|| {
-          format_err!(
-            "project {:?} did not specify a dest_branch and manifest has no default revision",
-            project_meta
-          )
-        })?;
+      let remote_name = project_meta.find_remote(&manifest)?;
+      let dest_branch_name = project_meta.find_dest_branch(&manifest)?;
 
       let head = repo.head().context("could not determine HEAD")?;
       let src_branch_info = BranchInfo::from_ref(head)?;
@@ -999,7 +973,7 @@ impl Tree {
 
       let cmd = util::make_push_command(
         self.path.join(&project.project_path),
-        remote_name,
+        &remote_name,
         &dest_branch_info.name_without_remote(),
         &util::UploadOptions {
           ccs: ccs,
@@ -1185,27 +1159,8 @@ impl Tree {
       .get(&PathBuf::from(&project.project_path))
       .ok_or_else(|| format_err!("failed to find project {:?}", project.project_path))?;
 
-    let remote_name = project_meta
-      .remote
-      .as_ref()
-      .or_else(|| manifest.default.as_ref().and_then(|d| d.remote.as_ref()))
-      .ok_or_else(|| {
-        format_err!(
-          "project {:?} did not specify a dest_branch and manifest has no default revision",
-          project_meta
-        )
-      })?;
-
-    let dest_branch = project_meta
-      .revision
-      .as_ref()
-      .or_else(|| manifest.default.as_ref().and_then(|d| d.revision.as_ref()))
-      .ok_or_else(|| {
-        format_err!(
-          "project {:?} did not specify a dest_branch and manifest has no default revision",
-          project_meta
-        )
-      })?;
+    let remote_name = project_meta.find_remote(&manifest)?;
+    let dest_branch = project_meta.find_dest_branch(&manifest)?;
 
     let mut cmd = std::process::Command::new("git");
     cmd
