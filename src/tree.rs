@@ -47,9 +47,22 @@ pub enum FetchType {
   NoFetch,
 }
 
+#[derive(Clone, PartialEq)]
+pub enum FetchTarget {
+  /// Fetch whatever each project has specified as its upstream revision.
+  Upstream,
+
+  /// Fetch specific revisions for the project.
+  Specific(Vec<String>),
+
+  /// Fetch everything.
+  All,
+}
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum CheckoutType {
   Checkout,
+  RefsOnly,
   NoCheckout,
 }
 
@@ -313,7 +326,12 @@ impl Tree {
       .context("failed to create manifest symlink")?;
 
     if fetch {
-      depot.fetch_repo(&remote_config, &remote_config.manifest, &branch, None)?;
+      depot.fetch_repo(
+        &remote_config,
+        &remote_config.manifest,
+        Some(&[branch.to_string()]),
+        None,
+      )?;
     }
     depot.clone_repo(&remote_config, &remote_config.manifest, &branch, &manifest_path)?;
 
@@ -389,12 +407,7 @@ impl Tree {
       .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
-    let group_filters = self
-      .config
-      .group_filters
-      .as_ref()
-      .map(Vec::as_slice)
-      .unwrap_or(&[]);
+    let group_filters = self.config.group_filters.as_ref().map(Vec::as_slice).unwrap_or(&[]);
 
     // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
     // but repo doesn't handle this either.
@@ -433,22 +446,34 @@ impl Tree {
     depot: &Depot,
     remote_config: &RemoteConfig,
     projects: Vec<ProjectInfo>,
-    fetch: bool,
+    fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
   ) -> Result<i32, Error> {
     let remote_config = Arc::new(remote_config.clone());
     let depot: Arc<Depot> = Arc::new(depot.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
+    if let Some(target) = fetch_target {
+      let target: Arc<FetchTarget> = Arc::new(target);
 
-    if fetch {
       let mut job = Job::with_name("fetching");
       for project in &projects {
         let depot = Arc::clone(&depot);
         let remote_config = Arc::clone(&remote_config);
         let project_info = Arc::clone(&project);
+        let target = Arc::clone(&target);
 
         job.add_task(project_info.project_name.clone(), move |_| {
-          depot.fetch_repo(&remote_config, &project_info.project_name, &project_info.revision, None)
+          let upstream = [project_info.revision.clone()];
+          let target = match target.deref() {
+            FetchTarget::Upstream => Some(&upstream[..]),
+            FetchTarget::Specific(targets) => Some(targets.as_slice()),
+            FetchTarget::All => None,
+          };
+          depot
+            .fetch_repo(&remote_config, &project_info.project_name, target, None)
+            .context(format!("failed to fetch for project {}", project_info.project_name,))?;
+
+          Ok(())
         });
       }
 
@@ -461,7 +486,7 @@ impl Tree {
       }
     }
 
-    if checkout == CheckoutType::Checkout {
+    if checkout == CheckoutType::Checkout || checkout == CheckoutType::RefsOnly {
       let mut job = Job::with_name("checkout");
       let tree_root = Arc::new(self.path.clone());
 
@@ -478,66 +503,70 @@ impl Tree {
 
           if project_path.exists() {
             depot
-              .update_remote_refs(&remote_config, &project_name, &project_path)
+              .update_remote_refs(&remote_config, &project_info.project_name, &project_path)
               .context("failed to update remote refs")?;
-
-            let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
-
-            // There's two things to be concerned about here:
-            //  - HEAD might be attached to a branch
-            //  - the repo might have uncommitted changes in the index or worktree
-            //
-            // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
-            // try to perform the equivalent of `git pull --rebase`.
-            //
-            // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
-            let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
-            let current_head = repo.head().context("failed to get HEAD")?;
-
-            if !head_detached {
-              let branch_name = current_head
-                .shorthand()
-                .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
-              bail!("currently on a branch ({})", branch_name);
-            } else {
-              let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
-                .context("failed to find revision to sync to".to_string())?;
-
-              // Current head can't be a symbolic reference, because it has to be detached.
-              let current_head = current_head
-                .target()
-                .ok_or_else(|| format_err!("failed to get target of HEAD"))?;
-
-              // Only do anything if we're not already on the new HEAD.
-              if current_head != new_head.id() {
-                let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
-                if let Err(err) = probe {
-                  bail!(err);
-                }
-
-                repo
-                  .checkout_tree(&new_head, None)
-                  .context(format!("failed to checkout to {:?}", new_head))?;
-
-                repo.set_head_detached(new_head.id()).context("failed to detach HEAD")?;
-              }
-            }
-          } else {
-            depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
           }
 
-          // Set up symlinks to repo hooks.
-          let hooks_dir = project_path.join(".git").join("hooks");
-          let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
-            .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
-            .join(".pore")
-            .join("hooks");
-          for filename in hooks::hooks().keys() {
-            let target = relpath.join(filename);
-            let symlink_path = hooks_dir.join(filename);
-            let _ = std::fs::remove_file(&symlink_path);
-            create_symlink(&target, &symlink_path)
-              .context(format!("failed to create symlink at {:?}", &symlink_path))?;
+          if checkout == CheckoutType::Checkout {
+            if project_path.exists() {
+              let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
+
+              // There's two things to be concerned about here:
+              //  - HEAD might be attached to a branch
+              //  - the repo might have uncommitted changes in the index or worktree
+              //
+              // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
+              // try to perform the equivalent of `git pull --rebase`.
+              //
+              // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
+              let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
+              let current_head = repo.head().context("failed to get HEAD")?;
+
+              if !head_detached {
+                let branch_name = current_head
+                  .shorthand()
+                  .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
+                bail!("currently on a branch ({})", branch_name);
+              } else {
+                let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
+                  .context("failed to find revision to sync to".to_string())?;
+
+                // Current head can't be a symbolic reference, because it has to be detached.
+                let current_head = current_head
+                  .target()
+                  .ok_or_else(|| format_err!("failed to get target of HEAD"))?;
+
+                // Only do anything if we're not already on the new HEAD.
+                if current_head != new_head.id() {
+                  let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+                  if let Err(err) = probe {
+                    bail!(err);
+                  }
+
+                  repo
+                    .checkout_tree(&new_head, None)
+                    .context(format!("failed to checkout to {:?}", new_head))?;
+
+                  repo.set_head_detached(new_head.id()).context("failed to detach HEAD")?;
+                }
+              }
+            } else {
+              depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
+            }
+
+            // Set up symlinks to repo hooks.
+            let hooks_dir = project_path.join(".git").join("hooks");
+            let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
+              .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
+              .join(".pore")
+              .join("hooks");
+            for filename in hooks::hooks().keys() {
+              let target = relpath.join(filename);
+              let symlink_path = hooks_dir.join(filename);
+              let _ = std::fs::remove_file(&symlink_path);
+              create_symlink(&target, &symlink_path)
+                .context(format!("failed to create symlink at {:?}", &symlink_path))?;
+            }
           }
 
           Ok(())
@@ -630,28 +659,31 @@ impl Tree {
     mut pool: &mut Pool,
     depot: &Depot,
     sync_under: Option<Vec<&str>>,
-    fetch: FetchType,
+    fetch_type: FetchType,
+    fetch_target: FetchTarget,
     checkout: CheckoutType,
   ) -> Result<i32, Error> {
-    // Sync the manifest repo first.
     let remote_config = config.find_remote(&self.config.remote)?;
-    let manifest = vec![ProjectInfo {
-      project_path: ".pore/manifest".into(),
-      project_name: self.config.manifest.clone(),
-      revision: self.config.branch.clone(),
-      file_ops: Vec::new(),
-    }];
+    if fetch_type == FetchType::Fetch {
+      // Sync the manifest repo first.
+      let manifest = vec![ProjectInfo {
+        project_path: ".pore/manifest".into(),
+        project_name: self.config.manifest.clone(),
+        revision: self.config.branch.clone(),
+        file_ops: Vec::new(),
+      }];
 
-    self.update_hooks()?;
+      self.update_hooks()?;
 
-    self.sync_repos(
-      &mut pool,
-      depot,
-      &remote_config,
-      manifest,
-      fetch == FetchType::Fetch,
-      checkout,
-    )?;
+      self.sync_repos(
+        &mut pool,
+        depot,
+        &remote_config,
+        manifest,
+        Some(FetchTarget::Upstream),
+        checkout,
+      )?;
+    }
 
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(&manifest, sync_under)?;
@@ -660,7 +692,11 @@ impl Tree {
       depot,
       &remote_config,
       projects,
-      fetch != FetchType::NoFetch,
+      if fetch_type == FetchType::NoFetch {
+        None
+      } else {
+        Some(fetch_target)
+      },
       checkout,
     )?;
     Ok(0)

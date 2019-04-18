@@ -16,7 +16,6 @@
 
 #![feature(fnbox)]
 #![feature(futures_api)]
-
 #![allow(clippy::too_many_arguments)]
 
 #[macro_use]
@@ -69,7 +68,7 @@ mod util;
 use config::Config;
 use manifest::Manifest;
 use pool::Pool;
-use tree::{CheckoutType, FetchType, FileState, GroupFilter, Tree};
+use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
 
 lazy_static! {
   static ref AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().green() };
@@ -130,7 +129,15 @@ fn cmd_clone(
     FetchType::NoFetch
   };
 
-  tree.sync(&config, &mut pool, &depot, None, fetch_type, CheckoutType::Checkout)
+  tree.sync(
+    &config,
+    &mut pool,
+    &depot,
+    None,
+    fetch_type,
+    FetchTarget::Upstream,
+    CheckoutType::Checkout,
+  )
 }
 
 fn cmd_sync(
@@ -138,12 +145,21 @@ fn cmd_sync(
   mut pool: &mut Pool,
   tree: &mut Tree,
   sync_under: Option<Vec<&str>>,
-  fetch: FetchType,
+  fetch_type: FetchType,
+  fetch_target: FetchTarget,
   checkout: CheckoutType,
 ) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  tree.sync(&config, &mut pool, &depot, sync_under, fetch, checkout)
+  tree.sync(
+    &config,
+    &mut pool,
+    &depot,
+    sync_under,
+    fetch_type,
+    fetch_target,
+    checkout,
+  )
 }
 
 fn cmd_start(config: &Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
@@ -297,6 +313,12 @@ fn main() {
     )
     (@subcommand fetch =>
       (about: "fetch a tree's repositories without checking out")
+      (@group targets =>
+        (@arg FETCH_ALL: -a "fetch all remote refs (opposite of `repo sync -c`, which is the default behavior)")
+        (@arg BRANCH: -b --branch +takes_value +multiple number_of_values(1)
+          "specify a branch to fetch (can be used multiple times)"
+        )
+      )
       (@arg PATH: ...
         "path(s) beneath which repositories are synced\n\
          defaults to all repositories in the tree if unspecified"
@@ -305,6 +327,11 @@ fn main() {
     (@subcommand sync =>
       (about: "fetch and checkout a tree's repositories")
       (@arg LOCAL: -l "don't fetch; use only the local cache")
+      (@arg FETCH_ALL: -a "fetch all remote refs (opposite of `repo sync -c`, which is the default behavior)")
+      (@arg BRANCH: -b --branch +takes_value +multiple number_of_values(1)
+        "specify a branch to fetch (can be used multiple times)"
+      )
+      (@arg REFS_ONLY: -r --("refs-only") "don't checkout, only update the refs")
       (@arg PATH: ...
         "path(s) beneath which repositories are synced\n\
          defaults to all repositories in the tree if unspecified"
@@ -476,19 +503,35 @@ fn main() {
       ("fetch", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
-        let sync_under = submatches.values_of("PATH").map(Iterator::collect);
+        let fetch_under = submatches.values_of("PATH").map(Iterator::collect);
+
+        let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
+        let fetch_all = submatches.is_present("FETCH_ALL");
+
+        let fetch_target = {
+          if fetch_all {
+            FetchTarget::All
+          } else if branches.is_none() {
+            FetchTarget::Upstream
+          } else {
+            let branches = branches.unwrap().iter().map(|s| s.to_string()).collect();
+            FetchTarget::Specific(branches)
+          }
+        };
+
         cmd_sync(
           &config,
           &mut pool,
           &mut tree,
-          sync_under,
+          fetch_under,
           FetchType::Fetch,
+          fetch_target,
           CheckoutType::NoCheckout,
         )
       }
 
       ("sync", Some(submatches)) => {
-        let fetch = if submatches.is_present("LOCAL") {
+        let fetch_type = if submatches.is_present("LOCAL") {
           FetchType::NoFetch
         } else {
           FetchType::Fetch
@@ -496,7 +539,34 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let sync_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_sync(&config, &mut pool, &mut tree, sync_under, fetch, CheckoutType::Checkout)
+
+        let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
+        let fetch_all = submatches.is_present("FETCH_ALL");
+
+        let fetch_target = {
+          if fetch_all {
+            FetchTarget::All
+          } else if branches.is_none() {
+            FetchTarget::Upstream
+          } else {
+            let branches = branches.unwrap().iter().map(|s| s.to_string()).collect();
+            FetchTarget::Specific(branches)
+          }
+        };
+        let refs_only = submatches.is_present("REFS_ONLY");
+        cmd_sync(
+          &config,
+          &mut pool,
+          &mut tree,
+          sync_under,
+          fetch_type,
+          fetch_target,
+          if refs_only {
+            CheckoutType::RefsOnly
+          } else {
+            CheckoutType::Checkout
+          },
+        )
       }
 
       ("start", Some(submatches)) => {
