@@ -49,7 +49,7 @@ pub struct Default {
   pub revision: Option<String>,
   pub remote: Option<String>,
   pub sync_j: Option<u32>,
-  pub sync_c: Option<u32>,
+  pub sync_c: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ pub struct Project {
   pub dest_branch: Option<String>,
   pub groups: Option<Vec<String>>,
 
-  pub sync_c: Option<u32>,
+  pub sync_c: Option<bool>,
   pub clone_depth: Option<u32>,
 
   pub file_operations: Vec<FileOperation>,
