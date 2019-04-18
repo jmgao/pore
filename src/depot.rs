@@ -122,7 +122,7 @@ impl Depot {
     &self,
     remote_config: &config::RemoteConfig,
     project: &str,
-    branch: &str,
+    targets: Option<&[String]>,
     depth: Option<i32>,
   ) -> Result<(), Error> {
     ensure!(!project.starts_with('/'), "invalid project path {}", project);
@@ -150,12 +150,17 @@ impl Depot {
       .arg(&objects_path)
       .arg("fetch")
       .arg(&remote_config.name)
-      .arg(&branch)
       .arg("--no-tags");
 
     if let Some(depth) = depth {
       cmd.arg("--depth");
       cmd.arg(depth.to_string());
+    }
+
+    if let Some(targets) = targets {
+      for target in targets {
+        cmd.arg(&target);
+      }
     }
 
     let git_output = cmd.output().context("failed to spawn git fetch")?;
