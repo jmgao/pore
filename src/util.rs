@@ -82,32 +82,15 @@ pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   // we correctly pick the remote one.
   let object = match repo.revparse_single(&format!("{}/{}", remote, revision)) {
     Ok(obj) => obj,
-    Err(_) => {
-      repo
-        .revparse_single(&revision)
-        .context(format!("failed to find revision {} from remote {} in {:?}", revision, remote, repo.path()))?
-    }
+    Err(_) => repo.revparse_single(&revision).context(format!(
+      "failed to find revision {} from remote {} in {:?}",
+      revision,
+      remote,
+      repo.path()
+    ))?,
   };
 
   Ok(object)
-}
-
-pub fn branch_name<'a>(branch: &'a git2::Branch) -> Result<&'a str, Error> {
-  Ok(
-    branch
-      .name()
-      .context("could not determine branch name")?
-      .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?,
-  )
-}
-
-pub fn branch_to_commit<'a>(branch: &'a git2::Branch) -> Result<git2::Commit<'a>, Error> {
-  Ok(
-    branch
-      .get()
-      .peel_to_commit()
-      .context(format_err!("could not resolve {} reference", branch_name(branch)?))?,
-  )
 }
 
 fn find_independent_commits_inner(
