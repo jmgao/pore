@@ -208,55 +208,81 @@ pub struct ProjectStatus {
   pub files: Vec<FileStatus>,
 }
 
+struct BranchInfo<'repo> {
+  pub name: String,
+  pub commit: git2::Commit<'repo>,
+}
+
+impl<'repo> BranchInfo<'repo> {
+  fn from_branch(branch: git2::Branch) -> Result<BranchInfo, Error> {
+    let name = branch
+      .name()
+      .context("could not determine branch name")?
+      .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?;
+    let commit = branch
+      .get()
+      .peel_to_commit()
+      .context(format!("failed to get commit for {}", name))?;
+
+    Ok(BranchInfo {
+      name: name.to_string(),
+      commit: commit,
+    })
+  }
+
+  fn from_ref(reference: git2::Reference) -> Result<BranchInfo, Error> {
+    ensure!(reference.is_branch(), "expected reference to refer to a branch");
+    BranchInfo::from_branch(git2::Branch::wrap(reference))
+  }
+
+  fn from_branch_name(
+    repo: &'repo git2::Repository,
+    branch_name: &str,
+    branch_type: git2::BranchType,
+  ) -> Result<BranchInfo<'repo>, Error> {
+    BranchInfo::from_branch(repo.find_branch(branch_name, branch_type).context(format!(
+      "could not find {} branch {}",
+      match branch_type {
+        git2::BranchType::Local => "local",
+        git2::BranchType::Remote => "remote",
+      },
+      branch_name
+    ))?)
+  }
+
+  fn name_without_remote(&self) -> &str {
+    let components: Vec<&str> = self.name.split("/").collect();
+    assert!(components.len() == 1 || components.len() == 2);
+    components.last().unwrap()
+  }
+}
+
 fn summarize_upload(
   project_name: &str,
   repo: &git2::Repository,
-  dst_remote: &str,
-  dst_branch_name: &str,
+  src: &BranchInfo,
+  dest: &BranchInfo,
+  dest_remote: &str,
   autosubmit: bool,
+  commits: &Vec<git2::Oid>,
 ) -> Result<(), Error> {
-  let head = repo.head().context("could not determine HEAD")?;
-  ensure!(head.is_branch(), "expected HEAD to refer to a branch");
-  let src_branch = git2::Branch::wrap(head);
-  let src_branch_name = src_branch
-    .name()
-    .context("could not determine branch name for HEAD")?
-    .ok_or_else(|| format_err!("branch name is not valid UTF-8"))?;
-
-  let dst_branch = repo
-    .find_branch(
-      format!("{}/{}", dst_remote, dst_branch_name).as_str(),
-      git2::BranchType::Remote,
-    )
-    .context(format!("could not find branch {}", dst_branch_name))?;
-
   let (ahead, _behind) = repo
-    .graph_ahead_behind(branch_to_commit(&src_branch)?.id(), branch_to_commit(&dst_branch)?.id())
+    .graph_ahead_behind(src.commit.id(), dest.commit.id())
     .context(format!(
       "could not determine state of {} against {}",
-      src_branch_name, dst_branch_name
+      src.name, dest.name
     ))?;
 
-  let src_commit = src_branch
-    .get()
-    .peel_to_commit()
-    .context(format!("failed to get commit for {}", src_branch_name))?;
-  let dst_commit = dst_branch
-    .get()
-    .peel_to_commit()
-    .context(format!("failed to get commit for {}/{}", dst_remote, dst_branch_name))?;
-  let commits = find_independent_commits(&repo, &src_commit, &dst_commit)?;
-
-  let is_aosp = dst_remote == "aosp";
+  let is_aosp = dest_remote == "aosp";
   let mut lines = vec![format!(
     "Upload {} commit{} from branch {} of project {}",
     ahead,
     if commits.len() == 1 { "" } else { "s" },
-    BRANCH_STYLE.apply_to(src_branch_name),
+    BRANCH_STYLE.apply_to(&src.name),
     PROJECT_STYLE.apply_to(project_name),
   )];
 
-  for commit_oid in &commits {
+  for commit_oid in commits {
     let commit = repo
       .find_commit(*commit_oid)
       .context(format!("could not find commit matching {}", commit_oid))?;
@@ -276,12 +302,12 @@ fn summarize_upload(
   lines.push(format!(
     "to {}{}{} {}[y/N]? ",
     if is_aosp {
-      AOSP_REMOTE_STYLE.apply_to(dst_remote)
+      AOSP_REMOTE_STYLE.apply_to(dest_remote)
     } else {
-      NON_AOSP_REMOTE_STYLE.apply_to(dst_remote)
+      NON_AOSP_REMOTE_STYLE.apply_to(dest_remote)
     },
     SLASH_STYLE.apply_to("/"),
-    BRANCH_STYLE.apply_to(dst_branch_name),
+    BRANCH_STYLE.apply_to(&dest.name_without_remote()),
     if autosubmit {
       format!("({}) ", console::style("autosubmit enabled").red().bold())
     } else {
@@ -902,7 +928,7 @@ impl Tree {
           )
         })?;
 
-      let dest_branch = project_meta
+      let dest_branch_name = project_meta
         .revision
         .as_ref()
         .or_else(|| manifest.default.as_ref().and_then(|d| d.revision.as_ref()))
@@ -913,16 +939,34 @@ impl Tree {
           )
         })?;
 
+      let head = repo.head().context("could not determine HEAD")?;
+      let src_branch_info = BranchInfo::from_ref(head)?;
+      let dest_branch_info = BranchInfo::from_branch_name(
+        &repo,
+        format!("{}/{}", remote_name, dest_branch_name).as_str(),
+        git2::BranchType::Remote,
+      )?;
+
+      let commits = util::find_independent_commits(&repo, &src_branch_info.commit, &dest_branch_info.commit)?;
+
       if !no_verify {
         // Separate the upload prompt from preupload hook output.
         println!();
       }
 
-      summarize_upload(&project.project_name, &repo, &remote_name, &dest_branch, autosubmit)?;
+      summarize_upload(
+        &project.project_name,
+        &repo,
+        &src_branch_info,
+        &dest_branch_info,
+        &remote_name,
+        autosubmit,
+        &commits,
+      )?;
 
       // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
       // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
-      let ref_spec = format!("HEAD:refs/for/{}", dest_branch);
+      let ref_spec = format!("HEAD:refs/for/{}", dest_branch_name);
       let mut cmd = std::process::Command::new("git");
       cmd.current_dir(self.path.join(&project.project_path)).arg("push");
 
@@ -957,11 +1001,8 @@ impl Tree {
       }
 
       if branch_name_as_topic {
-        let head = repo.head().context("could not determine HEAD")?;
-        ensure!(head.is_branch(), "expected HEAD to refer to a branch");
-        let branch = git2::Branch::wrap(head);
         cmd.arg("-o");
-        cmd.arg(format!("topic={}", branch_name(&branch)?));
+        cmd.arg(format!("topic={}", &src_branch_info.name));
       }
 
       cmd.arg(remote_name).arg(ref_spec);
