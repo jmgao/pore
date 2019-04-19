@@ -93,6 +93,60 @@ pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   Ok(object)
 }
 
+pub struct UploadOptions<'repo> {
+  pub ccs: &'repo [String],
+  pub reviewers: &'repo [String],
+  pub topic: Option<String>,
+  pub autosubmit: bool,
+  pub presubmit_ready: bool,
+  pub private: bool,
+  pub wip: bool,
+}
+
+pub fn make_push_command(
+  project_path: std::path::PathBuf,
+  remote: &String,
+  dest_branch_name: &String,
+  options: &UploadOptions,
+) -> std::process::Command {
+  // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
+  // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
+  let ref_spec = format!("HEAD:refs/for/{}", dest_branch_name);
+  let mut cmd = std::process::Command::new("git");
+  cmd.current_dir(project_path).arg("push");
+
+  for reviewer in options.reviewers {
+    cmd.arg("-o").arg(format!("r={}", reviewer));
+  }
+
+  for cc in options.ccs {
+    cmd.arg("-o").arg(format!("cc={}", cc));
+  }
+
+  if options.wip {
+    cmd.arg("-o").arg("wip");
+  }
+
+  if options.private {
+    cmd.arg("-o").arg("private");
+  }
+
+  if options.autosubmit {
+    cmd.arg("-o").arg("l=Autosubmit");
+  }
+
+  if options.presubmit_ready {
+    cmd.arg("-o").arg("l=Presubmit-Ready");
+  }
+
+  if let Some(t) = &options.topic {
+    cmd.arg("-o").arg(format!("topic={}", t));
+  }
+
+  cmd.arg(remote).arg(ref_spec);
+  cmd
+}
+
 fn find_independent_commits_inner(
   from: &git2::Commit,
   to: &git2::Commit,

@@ -208,7 +208,7 @@ pub struct ProjectStatus {
   pub files: Vec<FileStatus>,
 }
 
-struct BranchInfo<'repo> {
+pub struct BranchInfo<'repo> {
   pub name: String,
   pub commit: git2::Commit<'repo>,
 }
@@ -964,49 +964,24 @@ impl Tree {
         &commits,
       )?;
 
-      // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
-      // git push $REMOTE HEAD:refs/for/$UPSTREAM_BRANCH%$OPTIONS
-      let ref_spec = format!("HEAD:refs/for/{}", dest_branch_name);
-      let mut cmd = std::process::Command::new("git");
-      cmd.current_dir(self.path.join(&project.project_path)).arg("push");
-
-      for reviewer in reviewers {
-        cmd.arg("-o");
-        cmd.arg(format!("r={}", reviewer));
-      }
-
-      for cc in ccs {
-        cmd.arg("-o");
-        cmd.arg(format!("cc={}", cc));
-      }
-
-      if wip {
-        cmd.arg("-o");
-        cmd.arg("wip");
-      }
-
-      if private {
-        cmd.arg("-o");
-        cmd.arg("private");
-      }
-
-      if autosubmit {
-        cmd.arg("-o");
-        cmd.arg("l=Autosubmit");
-      }
-
-      if presubmit_ready {
-        cmd.arg("-o");
-        cmd.arg("l=Presubmit-Ready");
-      }
-
-      if branch_name_as_topic {
-        cmd.arg("-o");
-        cmd.arg(format!("topic={}", &src_branch_info.name));
-      }
-
-      cmd.arg(remote_name).arg(ref_spec);
-
+      let mut cmd = util::make_push_command(
+        self.path.join(&project.project_path),
+        remote_name,
+        &dest_branch_name,
+        &util::UploadOptions {
+          ccs: ccs,
+          reviewers: reviewers,
+          topic: if branch_name_as_topic {
+            Some(src_branch_info.name)
+          } else {
+            None
+          },
+          autosubmit: autosubmit,
+          presubmit_ready: presubmit_ready,
+          private: private,
+          wip: wip,
+        },
+      );
       let git_output = cmd.output().context("failed to spawn git push")?;
       println!("{}", String::from_utf8_lossy(&git_output.stderr));
     }
