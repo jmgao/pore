@@ -141,6 +141,10 @@ impl Depot {
         .context("failed to create remote")?;
     }
 
+    // Disable automatic `git gc`.
+    let mut config = objects_repo.config().context(format!("failed to get config for repo at {:?}", objects_path))?;
+    config.set_i32("gc.auto", 0).context("failed to set gc.auto")?;
+
     // Always use git directly.
     // libgit2 sometimes has pathologically bad performance while fetching some repositories.
     // We don't lose that much from shelling out to git to fetch, since we're mostly bound on bandwidth.
