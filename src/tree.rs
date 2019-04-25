@@ -167,6 +167,7 @@ pub struct TreeConfig {
 struct ProjectInfo {
   project_path: String,
   project_name: String,
+  remote: String,
   revision: String,
   file_ops: Vec<manifest::FileOperation>,
 }
@@ -453,6 +454,7 @@ impl Tree {
 
   fn collect_manifest_projects(
     &self,
+    config: &Config,
     manifest: &Manifest,
     under: Option<Vec<&str>>,
   ) -> Result<Vec<ProjectInfo>, Error> {
@@ -478,47 +480,54 @@ impl Tree {
       );
     }
 
-    Ok(
-      manifest
-        .projects
-        .iter()
-        .filter(|(_project_path, project)| GroupFilter::filter_project(&group_filters, &project))
-        .filter(|(project_path, _project)| {
-          paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
-        })
-        .map(|(project_path, project)| ProjectInfo {
-          project_path: project_path.to_str().expect("project path not UTF-8").into(),
-          project_name: project.name.clone(),
-          revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
-          file_ops: project.file_operations.clone(),
-        })
-        .collect(),
-    )
+    let filtered_projects = manifest
+      .projects
+      .iter()
+      .filter(|(_project_path, project)| GroupFilter::filter_project(&group_filters, &project))
+      .filter(|(project_path, _project)| {
+        paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
+      });
+
+    let mut projects = Vec::new();
+    for (project_path, project) in filtered_projects {
+      projects.push(ProjectInfo {
+        project_path: project_path.to_str().expect("project path not UTF-8").into(),
+        project_name: project.name.clone(),
+        remote: manifest.resolve_project_remote(config, &self.config, project)?,
+        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
+        file_ops: project.file_operations.clone(),
+      });
+    }
+    Ok(projects)
   }
 
   fn sync_repos(
     &mut self,
     pool: &mut Pool,
-    depot: &Depot,
-    remote_config: &RemoteConfig,
+    config: &Config,
     projects: Vec<ProjectInfo>,
     fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
   ) -> Result<i32, Error> {
-    let remote_config = Arc::new(remote_config.clone());
-    let depot: Arc<Depot> = Arc::new(depot.clone());
+    let config = Arc::new(config.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
     if let Some(target) = fetch_target {
       let target: Arc<FetchTarget> = Arc::new(target);
 
       let mut job = Job::with_name("fetching");
       for project in &projects {
-        let depot = Arc::clone(&depot);
-        let remote_config = Arc::clone(&remote_config);
+        let config = Arc::clone(&config);
         let project_info = Arc::clone(&project);
         let target = Arc::clone(&target);
 
         job.add_task(project_info.project_name.clone(), move |_| {
+          let remote = config
+            .find_remote(&project_info.remote)
+            .context(format!("failed to find remote {}", project_info.remote))?;
+          let depot = config
+            .find_depot(&remote.depot)
+            .context(format!("failed to find depot for remote {}", project_info.remote))?;
+
           let upstream = [project_info.revision.clone()];
           let target = match target.deref() {
             FetchTarget::Upstream => Some(&upstream[..]),
@@ -526,7 +535,7 @@ impl Tree {
             FetchTarget::All => None,
           };
           depot
-            .fetch_repo(&remote_config, &project_info.project_name, target, None)
+            .fetch_repo(&remote, &project_info.project_name, target, None)
             .context(format!("failed to fetch for project {}", project_info.project_name,))?;
 
           Ok(())
@@ -547,19 +556,25 @@ impl Tree {
       let tree_root = Arc::new(self.path.clone());
 
       for project in &projects {
-        let depot = Arc::clone(&depot);
-        let remote_config = Arc::clone(&remote_config);
+        let config = Arc::clone(&config);
         let project_info = Arc::clone(&project);
         let project_path = self.path.join(&project.project_path);
         let tree_root = Arc::clone(&tree_root);
 
         job.add_task(project.project_name.clone(), move |_| {
+          let remote = config
+            .find_remote(&project_info.remote)
+            .context(format!("failed to find remote {}", project_info.remote))?;
+          let depot = config
+            .find_depot(&remote.depot)
+            .context(format!("failed to find depot for remote {}", project_info.remote))?;
+
           let project_name = &project_info.project_name;
           let revision = &project_info.revision;
 
           if project_path.exists() {
             depot
-              .update_remote_refs(&remote_config, &project_info.project_name, &project_path)
+              .update_remote_refs(&remote, &project_info.project_name, &project_path)
               .context("failed to update remote refs")?;
           }
 
@@ -584,7 +599,7 @@ impl Tree {
                   .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
                 bail!("currently on a branch ({})", branch_name);
               } else {
-                let new_head = util::parse_revision(&repo, &remote_config.name, &revision)
+                let new_head = util::parse_revision(&repo, &remote.name, &revision)
                   .context("failed to find revision to sync to".to_string())?;
 
                 // Current head can't be a symbolic reference, because it has to be detached.
@@ -607,7 +622,7 @@ impl Tree {
                 }
               }
             } else {
-              depot.clone_repo(&remote_config, &project_name, &revision, &project_path)?;
+              depot.clone_repo(&remote, &project_name, &revision, &project_path)?;
             }
 
             // Set up symlinks to repo hooks.
@@ -713,40 +728,31 @@ impl Tree {
     &mut self,
     config: &Config,
     mut pool: &mut Pool,
-    depot: &Depot,
     sync_under: Option<Vec<&str>>,
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
   ) -> Result<i32, Error> {
-    let remote_config = config.find_remote(&self.config.remote)?;
     if fetch_type == FetchType::Fetch {
       // Sync the manifest repo first.
       let manifest = vec![ProjectInfo {
         project_path: ".pore/manifest".into(),
         project_name: self.config.manifest.clone(),
+        remote: self.config.remote.clone(),
         revision: self.config.branch.clone(),
         file_ops: Vec::new(),
       }];
 
       self.update_hooks()?;
 
-      self.sync_repos(
-        &mut pool,
-        depot,
-        &remote_config,
-        manifest,
-        Some(FetchTarget::Upstream),
-        checkout,
-      )?;
+      self.sync_repos(&mut pool, config, manifest, Some(FetchTarget::Upstream), checkout)?;
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, sync_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, sync_under)?;
     self.sync_repos(
       &mut pool,
-      depot,
-      &remote_config,
+      config,
       projects,
       if fetch_type == FetchType::NoFetch {
         None
@@ -760,12 +766,12 @@ impl Tree {
 
   pub fn status(
     &self,
-    _config: &Config,
+    config: &Config,
     pool: &mut Pool,
     status_under: Option<Vec<&str>>,
   ) -> Result<ExecutionResults<ProjectStatus>, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, status_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, status_under)?;
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
 
     let mut job = Job::with_name("status");
@@ -933,8 +939,9 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, upload_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, upload_under)?;
     let mut uploads: Vec<UploadInfo> = Vec::new();
+
     for project in projects {
       let repo = git2::Repository::open(self.path.join(&project.project_path))
         .context("failed to open repository".to_string())?;
@@ -1039,13 +1046,13 @@ impl Tree {
 
   pub fn prune(
     &self,
-    _config: &Config,
+    config: &Config,
     pool: &mut Pool,
     depot: &Depot,
     prune_under: Option<Vec<&str>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, prune_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, prune_under)?;
 
     let mut job = Job::with_name("pruning");
     let tree_root = Arc::new(self.path.clone());
@@ -1136,13 +1143,14 @@ impl Tree {
 
   pub fn rebase(
     &self,
+    config: &Config,
     pool: &mut Pool,
     interactive: bool,
     autosquash: bool,
     rebase_under: Option<Vec<&str>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, rebase_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, rebase_under)?;
 
     if interactive {
       ensure!(
@@ -1274,13 +1282,13 @@ impl Tree {
 
   pub fn forall(
     &self,
-    _config: &Config,
+    config: &Config,
     pool: &mut Pool,
     forall_under: Option<Vec<&str>>,
     command: &str,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(&manifest, forall_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, forall_under)?;
 
     let mut job = Job::with_name("forall");
     let tree_root = Arc::new(self.path.clone());
@@ -1354,7 +1362,7 @@ impl Tree {
       .find_remote(&self.config.remote)
       .context(format!("failed to find remote {}", self.config.remote))?;
     let projects = self
-      .collect_manifest_projects(&manifest, under)
+      .collect_manifest_projects(config, &manifest, under)
       .context("failed to collect manifest projects")?;
 
     let hook_project_name = match manifest.repo_hooks {

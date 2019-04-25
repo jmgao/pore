@@ -23,6 +23,9 @@ use failure::{Error, ResultExt};
 mod parser;
 mod serializer;
 
+use crate::tree::TreeConfig;
+use crate::Config;
+
 // The repo manifest format is described at
 // https://gerrit.googlesource.com/git-repo/+/master/docs/manifest-format.md
 
@@ -151,6 +154,10 @@ pub struct RepoHooks {
   pub enabled_list: Option<String>,
 }
 
+fn canonicalize_url(url: &str) -> &str {
+  url.trim_end_matches('/')
+}
+
 impl Manifest {
   pub fn parse(directory: impl AsRef<Path>, filename: impl AsRef<str>) -> Result<Manifest, Error> {
     parser::parse(directory.as_ref(), filename.as_ref())
@@ -158,5 +165,32 @@ impl Manifest {
 
   pub fn serialize(&self, output: Box<dyn Write>) -> Result<(), Error> {
     serializer::serialize(self, output)
+  }
+
+  pub fn resolve_project_remote(
+    &self,
+    config: &Config,
+    tree_config: &TreeConfig,
+    project: &Project,
+  ) -> Result<String, Error> {
+    let project_remote_name = project.find_remote(self)?;
+    let project_remote = self
+      .remotes
+      .get(&project_remote_name)
+      .ok_or_else(|| format_err!("remote {} missing in manifest", project_remote_name))?;
+
+    // repo allows the use of ".." to mean the URL from which the manifest was cloned.
+    if project_remote.fetch == ".." {
+      return Ok(tree_config.remote.clone());
+    }
+
+    let url = canonicalize_url(&project_remote.fetch);
+    for remote in &config.remotes {
+      if url == canonicalize_url(&remote.url) {
+        return Ok(remote.name.clone());
+      }
+    }
+
+    Err(format_err!("couldn't find remote in configuration matching '{}'", url))
   }
 }

@@ -25,7 +25,7 @@ use super::depot::Depot;
 use failure::Error;
 use failure::ResultExt;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
   #[serde(default = "default_autosubmit")]
   pub autosubmit: bool,
@@ -52,7 +52,7 @@ pub struct RemoteConfig {
   pub depot: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepotConfig {
   pub path: String,
 }

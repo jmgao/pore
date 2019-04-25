@@ -131,7 +131,6 @@ fn cmd_clone(
   tree.sync(
     &config,
     &mut pool,
-    &depot,
     None,
     fetch_type,
     FetchTarget::Upstream,
@@ -148,12 +147,9 @@ fn cmd_sync(
   fetch_target: FetchTarget,
   checkout: CheckoutType,
 ) -> Result<i32, Error> {
-  let remote_config = config.find_remote(&tree.config.remote)?;
-  let depot = config.find_depot(&remote_config.depot)?;
   tree.sync(
     &config,
     &mut pool,
-    &depot,
     sync_under,
     fetch_type,
     fetch_target,
@@ -227,13 +223,14 @@ fn cmd_prune(
 }
 
 fn cmd_rebase(
+  config: &Config,
   mut pool: &mut Pool,
   tree: &mut Tree,
   interactive: bool,
   autosquash: bool,
   rebase_under: Option<Vec<&str>>,
 ) -> Result<i32, Error> {
-  tree.rebase(&mut pool, interactive, autosquash, rebase_under)
+  tree.rebase(config, &mut pool, interactive, autosquash, rebase_under)
 }
 
 fn cmd_forall(
@@ -624,7 +621,7 @@ fn main() {
         let interactive = submatches.is_present("INTERACTIVE");
         let autosquash = submatches.is_present("AUTOSQUASH");
         let rebase_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_rebase(&mut pool, &mut tree, interactive, autosquash, rebase_under)
+        cmd_rebase(&config, &mut pool, &mut tree, interactive, autosquash, rebase_under)
       }
 
       ("status", Some(submatches)) => {
