@@ -948,6 +948,7 @@ impl Tree {
         .get(&PathBuf::from(&project.project_path))
         .ok_or_else(|| format_err!("failed to find project {:?}", project.project_path))?;
 
+      // TODO: Obey <remote review="...">?
       let remote_name = project_meta.find_remote(&manifest)?;
       let dest_branch_name = project_meta.find_dest_branch(&manifest)?;
 

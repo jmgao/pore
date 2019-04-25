@@ -229,6 +229,7 @@ impl Depot {
   ) -> Result<(), Error> {
     let path: &Path = path.as_ref();
 
+    // TODO: Respect <remote alias="...">?
     let mirror_refs = self
       .refs_mirror(&remote_config.name, project)
       .join("refs")
