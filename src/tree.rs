@@ -883,6 +883,7 @@ impl Tree {
     branch_name_as_topic: bool,
     autosubmit: bool,
     presubmit_ready: bool,
+    dry_run: bool,
   ) -> Result<i32, Error> {
     // TODO: Use a pool for >1, figure out how 0 (all projects) should work.
     ensure!(
@@ -982,8 +983,12 @@ impl Tree {
           wip: wip,
         },
       );
-      let git_output = cmd.output().context("failed to spawn git push")?;
-      println!("{}", String::from_utf8_lossy(&git_output.stderr));
+      if dry_run {
+        println!("running: {:?}", cmd);
+      } else {
+        let git_output = cmd.output().context("failed to spawn git push")?;
+        println!("{}", String::from_utf8_lossy(&git_output.stderr));
+      }
     }
 
     Ok(0)

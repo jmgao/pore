@@ -198,6 +198,7 @@ fn cmd_upload(
   branch_name_as_topic: bool,
   autosubmit: bool,
   presubmit_ready: bool,
+  dry_run: bool,
 ) -> Result<i32, Error> {
   tree.upload(
     config,
@@ -212,6 +213,7 @@ fn cmd_upload(
     branch_name_as_topic,
     autosubmit,
     presubmit_ready,
+    dry_run,
   )
 }
 
@@ -374,6 +376,7 @@ fn main() {
       (@arg NO_AUTOSUBMIT: --("no-autosubmit") +multiple "do not enable autosubmit")
       (@arg PRESUBMIT: --presubmit +multiple "queue the change for presubmit")
       (@arg NO_PRESUBMIT: --("no-presubmit") +multiple "do not queue the change for presubmit")
+      (@arg DRY_RUN: --("dry-run") "don't upload; just show upload commands")
     )
     (@subcommand prune =>
       (about: "prune branches that have been merged")
@@ -612,6 +615,7 @@ fn main() {
           submatches.is_present("BRANCH_NAME_AS_TOPIC"),
           autosubmit.unwrap_or(config.autosubmit),
           presubmit.unwrap_or(config.presubmit),
+          submatches.is_present("DRY_RUN"),
         )
       }
 
