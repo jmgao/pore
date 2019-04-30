@@ -106,7 +106,7 @@ pub struct UploadOptions<'a> {
 pub fn make_push_command(
   project_path: std::path::PathBuf,
   remote: &String,
-  dest_branch_name: &String,
+  dest_branch_name: &str,
   options: &UploadOptions,
 ) -> std::process::Command {
   // https://gerrit-review.googlesource.com/Documentation/user-upload.html#push_options
