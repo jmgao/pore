@@ -257,57 +257,53 @@ impl<'repo> BranchInfo<'repo> {
   }
 }
 
-fn summarize_upload(
-  project_name: &str,
-  repo: &git2::Repository,
-  src: &BranchInfo,
-  dest: &BranchInfo,
-  dest_remote: &str,
-  autosubmit: bool,
-  commits: &Vec<git2::Oid>,
-) -> Result<(), Error> {
-  let (ahead, _behind) = repo
-    .graph_ahead_behind(src.commit.id(), dest.commit.id())
-    .context(format!(
-      "could not determine state of {} against {}",
-      src.name, dest.name
-    ))?;
+struct CommitSummary {
+  pub id: git2::Oid,
+  pub summary: String,
+}
 
-  let is_aosp = dest_remote == "aosp";
-  let mut lines = vec![format!(
-    "Upload {} commit{} from branch {} of project {}",
-    ahead,
-    if commits.len() == 1 { "" } else { "s" },
-    BRANCH_STYLE.apply_to(&src.name),
-    PROJECT_STYLE.apply_to(project_name),
-  )];
+struct UploadSummary {
+  pub project_path: String,
+  pub src_branch: String,
+  pub dest_remote: String,
+  pub dest_branch: String,
+  pub commit_summaries: Vec<CommitSummary>,
+}
 
-  for commit_oid in commits {
-    let commit = repo
-      .find_commit(*commit_oid)
-      .context(format!("could not find commit matching {}", commit_oid))?;
+fn confirm_upload(upload_summaries: Vec<&UploadSummary>, autosubmit: bool) -> Result<(), Error> {
+  let mut lines: Vec<String> = Vec::new();
+  for upload_summary in upload_summaries {
+    let is_aosp = upload_summary.dest_remote == "aosp";
     lines.push(format!(
-      "  {:.10} {}",
-      console::style(commit.id()).cyan(),
-      commit
-        .summary()
-        .ok_or_else(|| format_err!("commit message for {} is not valid UTF-8", commit.id()))?
-    ))
-  }
+      "{}: {} commit{} from branch {} to {}{}{}",
+      PROJECT_STYLE.apply_to(&upload_summary.project_path),
+      upload_summary.commit_summaries.len(),
+      if upload_summary.commit_summaries.len() == 1 {
+        ""
+      } else {
+        "s"
+      },
+      BRANCH_STYLE.apply_to(&upload_summary.src_branch),
+      if is_aosp {
+        AOSP_REMOTE_STYLE.apply_to(&upload_summary.dest_remote)
+      } else {
+        NON_AOSP_REMOTE_STYLE.apply_to(&upload_summary.dest_remote)
+      },
+      SLASH_STYLE.apply_to("/"),
+      BRANCH_STYLE.apply_to(&upload_summary.dest_branch),
+    ));
 
-  if commits.is_empty() {
-    bail!("no commits to upload");
+    for commit_summary in &upload_summary.commit_summaries {
+      lines.push(format!(
+        "  {:.10} {}",
+        console::style(commit_summary.id).cyan(),
+        commit_summary.summary
+      ))
+    }
   }
 
   lines.push(format!(
-    "to {}{}{} {}[y/N]? ",
-    if is_aosp {
-      AOSP_REMOTE_STYLE.apply_to(dest_remote)
-    } else {
-      NON_AOSP_REMOTE_STYLE.apply_to(dest_remote)
-    },
-    SLASH_STYLE.apply_to("/"),
-    BRANCH_STYLE.apply_to(&dest.name_without_remote()),
+    "Continue with upload? {}[y/N]? ",
     if autosubmit {
       format!("({}) ", console::style("autosubmit enabled").red().bold())
     } else {
@@ -328,6 +324,38 @@ fn summarize_upload(
 
     _ => Err(format_err!("upload aborted by user")),
   }
+}
+
+fn summarize_upload(
+  project_path: &str,
+  repo: &git2::Repository,
+  src: &BranchInfo,
+  dest: &BranchInfo,
+  dest_remote: &str,
+  commits: &Vec<git2::Oid>,
+) -> Result<UploadSummary, Error> {
+  let mut commit_summaries: Vec<CommitSummary> = Vec::new();
+
+  for commit_oid in commits {
+    let commit = repo
+      .find_commit(*commit_oid)
+      .context(format!("could not find commit matching {}", commit_oid))?;
+    commit_summaries.push(CommitSummary {
+      id: commit.id(),
+      summary: commit
+        .summary()
+        .ok_or_else(|| format_err!("commit message for {} is not valid UTF-8", commit.id()))?
+        .to_string(),
+    })
+  }
+
+  Ok(UploadSummary {
+    project_path: project_path.to_string(),
+    src_branch: src.name.to_string(),
+    dest_remote: dest_remote.to_string(),
+    dest_branch: dest.name_without_remote().to_string(),
+    commit_summaries: commit_summaries,
+  })
 }
 
 impl Tree {
@@ -885,10 +913,10 @@ impl Tree {
     presubmit_ready: bool,
     dry_run: bool,
   ) -> Result<i32, Error> {
-    // TODO: Use a pool for >1, figure out how 0 (all projects) should work.
+    // TODO: Figure out how 0 (all projects) should work.
     ensure!(
-      upload_under.as_ref().map_or(false, |v| v.len() == 1),
-      "multi-project upload not yet implemented"
+      upload_under.as_ref().map_or(false, |v| v.len() >= 1),
+      "pathless upload not yet implemented; must specify which projects to upload"
     );
 
     ensure!(
@@ -903,8 +931,15 @@ impl Tree {
       }
     }
 
+    struct UploadInfo {
+      project_name: String,
+      summary: UploadSummary,
+      command: std::process::Command,
+    }
+
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(&manifest, upload_under)?;
+    let mut uploads: Vec<UploadInfo> = Vec::new();
     for project in projects {
       let repo = git2::Repository::open(self.path.join(&project.project_path))
         .context("failed to open repository".to_string())?;
@@ -949,26 +984,23 @@ impl Tree {
       )?;
 
       let commits = util::find_independent_commits(&repo, &src_branch_info.commit, &dest_branch_info.commit)?;
-
-      if !no_verify {
-        // Separate the upload prompt from preupload hook output.
-        println!();
+      if commits.len() == 0 {
+        bail!(format!("No commits to upload for {}", &project.project_path));
       }
 
-      summarize_upload(
-        &project.project_name,
+      let summary = summarize_upload(
+        &project.project_path,
         &repo,
         &src_branch_info,
         &dest_branch_info,
         &remote_name,
-        autosubmit,
         &commits,
       )?;
 
-      let mut cmd = util::make_push_command(
+      let cmd = util::make_push_command(
         self.path.join(&project.project_path),
         remote_name,
-        &dest_branch_name,
+        &dest_branch_info.name_without_remote(),
         &util::UploadOptions {
           ccs: ccs,
           reviewers: reviewers,
@@ -983,15 +1015,49 @@ impl Tree {
           wip: wip,
         },
       );
-      if dry_run {
-        println!("running: {:?}", cmd);
-      } else {
-        let git_output = cmd.output().context("failed to spawn git push")?;
-        println!("{}", String::from_utf8_lossy(&git_output.stderr));
-      }
+
+      uploads.push(UploadInfo {
+        project_name: project.project_name.to_string(),
+        summary: summary,
+        command: cmd,
+      })
     }
 
-    Ok(0)
+    if !no_verify {
+      // Separate the upload prompt from preupload hook output.
+      println!();
+    }
+
+    confirm_upload(uploads.iter().map(|u| &u.summary).collect(), autosubmit)?;
+
+    let mut job = Job::with_name("uploading");
+    for mut upload in uploads {
+      job.add_task(upload.project_name.clone(), move |_| -> Result<String, Error> {
+        if dry_run {
+          Ok(format!("running: {:?}", upload.command))
+        } else {
+          let git_output = upload.command.output().context("failed to spawn git push")?;
+          Ok(String::from_utf8_lossy(&git_output.stderr).to_string())
+        }
+      });
+    }
+
+    let results = pool.execute(job);
+    let mut failed = false;
+    for error in results.failed {
+      eprintln!("{}: {}", error.name, error.result);
+      failed = true;
+    }
+
+    for result in results.successful {
+      println!("{}", result.result);
+    }
+
+    if !failed {
+      Ok(0)
+    } else {
+      Ok(1)
+    }
   }
 
   pub fn prune(
