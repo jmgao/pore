@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#![feature(futures_api)]
 #![allow(clippy::too_many_arguments)]
 
 #[macro_use]
