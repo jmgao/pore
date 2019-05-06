@@ -142,7 +142,9 @@ impl Depot {
     }
 
     // Disable automatic `git gc`.
-    let mut config = objects_repo.config().context(format!("failed to get config for repo at {:?}", objects_path))?;
+    let mut config = objects_repo
+      .config()
+      .context(format!("failed to get config for repo at {:?}", objects_path))?;
     config.set_i32("gc.auto", 0).context("failed to set gc.auto")?;
 
     // Always use git directly.
