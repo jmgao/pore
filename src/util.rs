@@ -93,9 +93,9 @@ pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   Ok(object)
 }
 
-pub struct UploadOptions<'repo> {
-  pub ccs: &'repo [String],
-  pub reviewers: &'repo [String],
+pub struct UploadOptions<'a> {
+  pub ccs: &'a [String],
+  pub reviewers: &'a [String],
   pub topic: Option<String>,
   pub autosubmit: bool,
   pub presubmit_ready: bool,
