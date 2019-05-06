@@ -1,6 +1,5 @@
 use crate::*;
 
-use std::boxed::FnBox;
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -190,7 +189,7 @@ impl<T: Send> Job<T> {
 
 struct Task<T: Send> {
   name: String,
-  task: Box<dyn FnBox(&futures::task::Context) -> Result<T, Error> + Send>,
+  task: Box<dyn FnOnce(&futures::task::Context) -> Result<T, Error> + Send>,
 }
 
 #[cfg(test)]

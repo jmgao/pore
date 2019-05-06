@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#![feature(fnbox)]
 #![feature(futures_api)]
 #![allow(clippy::too_many_arguments)]
 
