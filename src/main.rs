@@ -37,6 +37,9 @@ extern crate clap;
 #[macro_use]
 extern crate maplit;
 
+#[macro_use]
+extern crate tracing_facade;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -279,6 +282,7 @@ fn main() {
     (@arg CONFIG: -c --config +takes_value "override default config file path (~/.pore.cfg)")
     (@arg CWD: -C +takes_value "run as if started in PATH instead of the current working directory")
     (@arg JOBS: -j +takes_value +global "number of jobs to use at a time, defaults to CPU_COUNT.")
+    (@arg TRACE_FILE: -t --("trace_file") +takes_value "emit Chromium trace file to TRACE_FILE")
     (@arg VERBOSE: -v ... "increase verbosity")
 
     (@subcommand init =>
@@ -427,6 +431,20 @@ fn main() {
   );
 
   let matches = app.get_matches();
+
+  if let Some(trace_file) = matches.value_of("TRACE_FILE") {
+    match std::fs::File::create(trace_file) {
+      Ok(file) => {
+        let tracer = tracing_chromium::Tracer::from_output(Box::new(file));
+        tracing_facade::set_boxed_tracer(Box::new(tracer));
+      }
+
+      Err(err) => {
+        fatal!("failed to open trace file: {}", err);
+      }
+    }
+  }
+
   if let Some(cwd) = matches.value_of("CWD") {
     if let Err(err) = std::env::set_current_dir(&cwd) {
       fatal!("failed to set working directory to {}: {}", cwd, err);

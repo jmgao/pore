@@ -117,6 +117,8 @@ impl Pool {
     pb.set_prefix(&job.name);
     pb.enable_steady_tick(1000);
 
+    trace_scoped!(format!("Pool::execute({})", job.name));
+
     let task_monitor = Arc::new(Mutex::new(TaskMonitor::new(Arc::clone(&pb))));
     let handles: Vec<_> = job
       .tasks
@@ -126,6 +128,7 @@ impl Pool {
         self
           .thread_pool()
           .spawn_with_handle(future::lazy(move |context| {
+            trace_scoped!(task.name.clone());
             let task_id = task_monitor.lock().unwrap().started(task.name.clone());
             let result = (task.task)(&context);
             task_monitor.lock().unwrap().finished(task_id);
