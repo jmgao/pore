@@ -14,7 +14,7 @@ The following instructions probably work on a Debian-ish system:
 
 ```sh
 sudo apt-get install -y build-essential ca-certificates curl git libssl-dev pkg-config ssh
-curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly-2019-04-16
+curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly-2019-05-10
 source $HOME/.cargo/env
 cargo install --git https://github.com/jmgao/pore --force
 ```
