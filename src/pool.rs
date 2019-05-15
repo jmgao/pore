@@ -11,7 +11,7 @@ use futures::task::SpawnExt;
 
 fn progress_bar_style(task_count: usize) -> indicatif::ProgressStyle {
   let task_count_digits = task_count.to_string().len();
-  let count = "{pos:>".to_owned() + &(6 - task_count_digits).to_string() + "}/{len}";
+  let count = "{pos:>".to_owned() + &(8 - task_count_digits).to_string() + "}/{len}";
   let template = "[{elapsed_precise}] {prefix} ".to_owned() + &count + " {bar:40.cyan/blue}: {msg}";
   indicatif::ProgressStyle::default_bar()
     .template(&template)
