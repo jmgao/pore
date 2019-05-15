@@ -744,7 +744,7 @@ impl Tree {
     for project in &projects {
       let project = Arc::clone(&project);
       let tree_root = Arc::clone(&tree_root);
-      job.add_task(project.project_name.clone(), move |_| -> Result<ProjectStatus, Error> {
+      job.add_task(project.project_path.clone(), move |_| -> Result<ProjectStatus, Error> {
         let path = tree_root.join(&project.project_path);
         let repo =
           git2::Repository::open(&path).context(format!("failed to open repository {}", project.project_path))?;
