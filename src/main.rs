@@ -281,7 +281,7 @@ fn main() {
     (help_message: "print help message")
     (version_message: "print version information")
 
-    (@arg CONFIG: -c --config +takes_value "override default config file path (~/.pore.cfg)")
+    (@arg CONFIG: -c --config +takes_value "override default config file path (~/.pore.toml)")
     (@arg CWD: -C +takes_value "run as if started in PATH instead of the current working directory")
     (@arg JOBS: -j +takes_value +global "number of jobs to use at a time, defaults to CPU_COUNT.")
     (@arg TRACE_FILE: -t --("trace_file") +takes_value "emit Chromium trace file to TRACE_FILE")
