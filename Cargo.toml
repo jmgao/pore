@@ -22,7 +22,7 @@ minidom = "0.10.0"
 clap = "2.32"
 maplit = "1.0"
 
-dirs = "1.0"
+dirs = "2.0"
 shellexpand = "1.0"
 pathdiff = "0.1"
 url = "1.7"
