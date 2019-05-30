@@ -48,6 +48,7 @@ fn default_presubmit() -> bool {
 pub struct RemoteConfig {
   pub name: String,
   pub url: String,
+  pub other_urls: Option<Vec<String>>,
   pub manifest: String,
   pub depot: String,
 }
@@ -66,12 +67,7 @@ impl Default for Config {
         RemoteConfig {
           name: "aosp".into(),
           url: "https://android.googlesource.com/".into(),
-          manifest: "platform/manifest".into(),
-          depot: "android".into(),
-        },
-        RemoteConfig {
-          name: "aosp-persistent-https".into(),
-          url: "persistent-https://android.googlesource.com/".into(),
+          other_urls: Some(vec!["persistent-https://android.googlesource.com/".into()]),
           manifest: "platform/manifest".into(),
           depot: "android".into(),
         },

@@ -189,6 +189,11 @@ impl Manifest {
       if url == canonicalize_url(&remote.url) {
         return Ok(remote.name.clone());
       }
+      for other_url in remote.other_urls.as_ref().map(|v| v.as_slice()).unwrap_or(&[]) {
+        if url == canonicalize_url(other_url) {
+          return Ok(remote.name.clone());
+        }
+      }
     }
 
     Err(format_err!("couldn't find remote in configuration matching '{}'", url))
