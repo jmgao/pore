@@ -150,6 +150,13 @@ fn parse_manifest(
 
       Event::Comment(_) => {}
 
+      Event::Text(text) => {
+        // Ignore stray text if it starts with a #.
+        if !text.starts_with(b"#") {
+          bail!("unexpected raw text in <manifest>: {:?}", text)
+        }
+      }
+
       e => bail!(
         "unexpected event in <manifest> at position {}: {:?}",
         reader.buffer_position(),
