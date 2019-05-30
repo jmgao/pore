@@ -80,12 +80,14 @@ impl Depot {
     let src: &Path = src.as_ref();
     let dst: &Path = dst.as_ref();
 
-    ensure!(
-      src.exists(),
-      "attempted to replace {:?} with nonexistent directory {:?}",
-      dst,
-      src
-    );
+    if !src.exists() {
+      // This can happen if we fetched a single commit directly, without any refs.
+      eprintln!(
+        "warning: attempted to replace {:?} with nonexistent directory {:?}",
+        dst, src
+      );
+      return Ok(());
+    }
 
     if dst.exists() {
       std::fs::remove_dir_all(&dst).context(format!("failed to delete {:?}", dst))?;
