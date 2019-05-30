@@ -159,8 +159,8 @@ fn canonicalize_url(url: &str) -> &str {
 }
 
 impl Manifest {
-  pub fn parse(directory: impl AsRef<Path>, filename: impl AsRef<str>) -> Result<Manifest, Error> {
-    parser::parse(directory.as_ref(), filename.as_ref())
+  pub fn parse(directory: impl AsRef<Path>, file: impl AsRef<Path>) -> Result<Manifest, Error> {
+    parser::parse(directory.as_ref(), file.as_ref())
   }
 
   pub fn serialize(&self, output: Box<dyn Write>) -> Result<(), Error> {

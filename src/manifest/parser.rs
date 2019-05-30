@@ -16,15 +16,14 @@ macro_rules! populate_option {
   }};
 }
 
-pub(crate) fn parse(directory: &Path, filename: &str) -> Result<Manifest, Error> {
+pub(crate) fn parse(directory: &Path, file: &Path) -> Result<Manifest, Error> {
   let mut manifest = Manifest::default();
-  parse_impl(&mut manifest, directory, filename)?;
+  parse_impl(&mut manifest, directory, file)?;
   Ok(manifest)
 }
 
-fn parse_impl(manifest: &mut Manifest, directory: &Path, filename: &str) -> Result<(), Error> {
-  let path = directory.join(filename);
-  let mut reader = Reader::from_file(&path).context(format!("failed to read manifest file {:?}", path))?;
+fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<(), Error> {
+  let mut reader = Reader::from_file(&file).context(format!("failed to read manifest file {:?}", file))?;
   reader.trim_text(true);
 
   let mut found_manifest = false;
@@ -226,7 +225,7 @@ fn parse_include(
       if filename.contains('/') {
         bail!("rejecting <include> filename that contains '/': {}", filename);
       }
-      parse_impl(manifest, directory, &filename)
+      parse_impl(manifest, directory, &directory.join(filename))
     }
 
     None => bail!("<include> has no filename"),

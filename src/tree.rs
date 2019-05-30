@@ -446,9 +446,8 @@ impl Tree {
 
   fn read_manifest(&self) -> Result<Manifest, Error> {
     let manifest_path = self.path.join(".pore").join("manifest");
-    let manifest_filename = "default.xml";
-
-    let manifest = Manifest::parse(&manifest_path, &manifest_filename).context("failed to read manifest")?;
+    let manifest_file = self.path.join(".pore").join("manifest.xml");
+    let manifest = Manifest::parse(&manifest_path, &manifest_file).context("failed to read manifest")?;
     Ok(manifest)
   }
 
