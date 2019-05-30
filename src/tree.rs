@@ -520,7 +520,7 @@ impl Tree {
         let project_info = Arc::clone(&project);
         let target = Arc::clone(&target);
 
-        job.add_task(project_info.project_name.clone(), move |_| {
+        job.add_task(project_info.project_path.clone(), move |_| {
           let remote = config
             .find_remote(&project_info.remote)
             .context(format!("failed to find remote {}", project_info.remote))?;
@@ -561,7 +561,7 @@ impl Tree {
         let project_path = self.path.join(&project.project_path);
         let tree_root = Arc::clone(&tree_root);
 
-        job.add_task(project.project_name.clone(), move |_| {
+        job.add_task(project.project_path.clone(), move |_| {
           let remote = config
             .find_remote(&project_info.remote)
             .context(format!("failed to find remote {}", project_info.remote))?;
@@ -933,7 +933,7 @@ impl Tree {
     }
 
     struct UploadInfo {
-      project_name: String,
+      project_path: String,
       summary: UploadSummary,
       command: std::process::Command,
     }
@@ -1001,7 +1001,7 @@ impl Tree {
       );
 
       uploads.push(UploadInfo {
-        project_name: project.project_name.to_string(),
+        project_path: project.project_path.clone(),
         summary: summary,
         command: cmd,
       })
@@ -1016,7 +1016,7 @@ impl Tree {
 
     let mut job = Job::with_name("uploading");
     for mut upload in uploads {
-      job.add_task(upload.project_name.clone(), move |_| -> Result<String, Error> {
+      job.add_task(upload.project_path.clone(), move |_| -> Result<String, Error> {
         if dry_run {
           Ok(format!("running: {:?}", upload.command))
         } else {
@@ -1065,7 +1065,7 @@ impl Tree {
     for project in projects {
       let depot = Arc::clone(&depot);
       let tree_root = Arc::clone(&tree_root);
-      job.add_task(project.project_name.clone(), move |_| -> Result<PruneResult, Error> {
+      job.add_task(project.project_path.clone(), move |_| -> Result<PruneResult, Error> {
         let path = tree_root.join(&project.project_path);
         let tree_repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
@@ -1205,7 +1205,7 @@ impl Tree {
     for project in projects {
       let tree_root = Arc::clone(&tree_root);
       let manifest = Arc::clone(&manifest);
-      job.add_task(project.project_name.clone(), move |_| -> Result<bool, Error> {
+      job.add_task(project.project_path.clone(), move |_| -> Result<bool, Error> {
         let path = tree_root.join(&project.project_path);
         let repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
@@ -1303,7 +1303,7 @@ impl Tree {
       let tree_root = Arc::clone(&tree_root);
       let command = Arc::clone(&command);
 
-      job.add_task(project.project_name.clone(), move |_| -> Result<CommandResult, Error> {
+      job.add_task(project.project_path.clone(), move |_| -> Result<CommandResult, Error> {
         let path = tree_root.join(&project.project_path);
         let rel_to_root = pathdiff::diff_paths(&tree_root, &path)
           .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
