@@ -98,12 +98,10 @@ impl Depot {
     let entries = std::fs::read_dir(&src).context(format!("failed to read directory {:?}", src))?;
 
     for entry in entries {
-      let entry = entry?;
-      std::fs::copy(entry.path(), dst.join(entry.file_name())).context(format!(
-        "failed to copy {:?} to {:?}",
-        entry.path(),
-        dst
-      ))?;
+      let entry = entry.context(format!("failed to read an entry in directory '{:?}'", src))?;
+      if let Err(err) = std::fs::copy(entry.path(), dst.join(entry.file_name())) {
+        eprintln!("warning: failed to copy {:?} to {:?}: {}", entry.path(), dst, err);
+      }
     }
 
     Ok(())
