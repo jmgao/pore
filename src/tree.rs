@@ -544,7 +544,7 @@ impl Tree {
       let result = pool.execute(job);
       if !result.failed.is_empty() {
         for failure in result.failed {
-          eprintln!("{}: {}", failure.name, failure.result.find_root_cause());
+          eprintln!("{}: {:?}", failure.name, failure.result);
         }
         bail!("failed to sync");
       }

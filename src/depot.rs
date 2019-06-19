@@ -178,12 +178,12 @@ impl Depot {
 
     let refs_path = self.refs_mirror(&remote_config.name, project);
     if git2::Repository::open(&refs_path).is_err() {
-      Depot::clone_alternates(&objects_path, &refs_path, true)?;
+      Depot::clone_alternates(&objects_path, &refs_path, true).context("failed to clone alternates")?;
     }
 
     let objects_refs = objects_path.join("refs").join("remotes").join(&remote_config.name);
     let refs_refs = refs_path.join("refs").join("heads");
-    Depot::replace_dir(&objects_refs, &refs_refs)?;
+    Depot::replace_dir(&objects_refs, &refs_refs).context("failed to replace heads")?;
 
     Ok(())
   }
