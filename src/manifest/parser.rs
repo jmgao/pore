@@ -278,7 +278,7 @@ fn parse_default(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<De
       b"revision" => populate_option!(default.revision, value),
       b"remote" => populate_option!(default.remote, value),
       b"sync-j" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-j")?),
-      b"sync-c" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-c")?),
+      b"sync-c" => populate_option!(default.sync_c, value.parse::<bool>().context("failed to parse sync-c")?),
 
       b"upstream" => {
         // Ignored attribute. Used to limit the scope of the fetch with -c when a project is pinned
