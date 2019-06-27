@@ -457,7 +457,6 @@ impl Tree {
     manifest: &Manifest,
     under: Option<Vec<&str>>,
   ) -> Result<Vec<ProjectInfo>, Error> {
-    // TODO: This assumes that all projects are under the same remote. Either remove this assumption or assert it?
     let default_revision = manifest
       .default
       .as_ref()
@@ -489,11 +488,23 @@ impl Tree {
 
     let mut projects = Vec::new();
     for (project_path, project) in filtered_projects {
+      let remote = manifest.resolve_project_remote(config, &self.config, project)?;
+      let remote_config = manifest
+        .remotes
+        .get(&remote)
+        .ok_or_else(|| format_err!("failed to find remote '{}' in config", remote))?;
+      let revision = project
+        .revision
+        .clone()
+        .or_else(|| remote_config.revision.clone())
+        .or_else(|| manifest.default.as_ref().and_then(|m| m.revision.clone()))
+        .unwrap_or_else(|| default_revision.clone());
+
       projects.push(ProjectInfo {
         project_path: project_path.to_str().expect("project path not UTF-8").into(),
         project_name: project.name.clone(),
-        remote: manifest.resolve_project_remote(config, &self.config, project)?,
-        revision: project.revision.clone().unwrap_or_else(|| default_revision.clone()),
+        remote,
+        revision,
         file_ops: project.file_operations.clone(),
       });
     }
