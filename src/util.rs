@@ -147,47 +147,18 @@ pub fn make_push_command(
   cmd
 }
 
-fn find_independent_commits_inner(
-  from: &git2::Commit,
-  to: &git2::Commit,
-  mut accumulator: &mut Vec<git2::Oid>,
-) -> Result<(), Error> {
-  if from.id() == to.id() {
-    return Ok(());
-  }
-
-  accumulator.push(from.id());
-  for parent in from.parents() {
-    find_independent_commits_inner(&parent, to, &mut accumulator)?;
-  }
-  Ok(())
-}
-
 /// Find the commits that will be added when merging `src` into `dst`.
 ///
-/// Roughly equivalent to `git show-branch --independent src dst`.
+/// Equivalent to `git log src ^dst`.
 pub fn find_independent_commits(
   repo: &git2::Repository,
   src: &git2::Commit,
   dst: &git2::Commit,
 ) -> Result<Vec<git2::Oid>, Error> {
-  let src_id = src.id();
-  let dst_id = dst.id();
-  let common_ancestor = repo.merge_base(src_id, dst_id).context(format_err!(
-    "could not find common ancestor of commits {:?} and {:?}",
-    src,
-    dst
-  ))?;
-
-  let mut accumulator = Vec::new();
-  find_independent_commits_inner(
-    &src,
-    &repo
-      .find_commit(common_ancestor)
-      .context(format_err!("could not find commit matching {}", common_ancestor))?,
-    &mut accumulator,
-  )?;
-  Ok(accumulator)
+  let mut revwalk = repo.revwalk()?;
+  revwalk.hide(dst.id())?;
+  revwalk.push(src.id())?;
+  Ok(revwalk.collect::<Result<Vec<_>,_>>()?)
 }
 
 pub fn read_line() -> Result<String, Error> {
