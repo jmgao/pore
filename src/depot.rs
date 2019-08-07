@@ -93,6 +93,13 @@ impl Depot {
       std::fs::remove_dir_all(&dst).context(format!("failed to delete {:?}", dst))?;
     }
 
+    std::fs::create_dir_all(
+      dst
+        .parent()
+        .ok_or_else(|| format_err!("failed to get parent of {:?}", dst))?,
+    )
+    .context(format!("failed to create directory {:?}", dst))?;
+
     copy_dir::copy_dir(&src, &dst).context(format!("failed to copy directory {:?} to {:?}", src, dst))?;
     Ok(())
   }
