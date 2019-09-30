@@ -9,12 +9,11 @@ a fresh checkout of a new tree takes on the order of one minute, instead of tens
 
 ### Installation and usage
 
-pore currently requires a nightly version of rust to compile, due to the use of the not-yet-stabilized futures API.
 The following instructions probably work on a Debian-ish system:
 
 ```sh
 sudo apt-get install -y build-essential ca-certificates curl git libssl-dev pkg-config ssh
-curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly-2019-05-10
+curl https://sh.rustup.rs -sSf | sh -s -- -y
 source $HOME/.cargo/env
 cargo install --git https://github.com/jmgao/pore --force
 ```
