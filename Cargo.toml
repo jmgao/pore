@@ -23,7 +23,7 @@ clap = "2.32"
 maplit = "1.0"
 
 copy_dir = "0.1.2"
-dirs = "1.0"
+dirs = "2.0"
 shellexpand = "1.0"
 pathdiff = "0.1"
 url = "2.0"
