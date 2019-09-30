@@ -30,7 +30,7 @@ url = "2.0"
 
 git2 = "0.9"
 
-console = "0.7"
+console = "0.9"
 indicatif = "0.11"
 
 tracing_facade = "0.1"
