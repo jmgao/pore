@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: jmgao/ubuntu-cosmic-mingw-w64-rust:latest
+      - image: jmgao/ubuntu-cosmic-mingw-w64-rust:20190928
     steps:
       - checkout
       - run:
@@ -16,10 +16,7 @@ jobs:
           command: apt-get install libssl-dev
       - run:
           name: Build
-          command: cargo build
+          command: cargo +stable build
       - run:
           name: Test
-          command: cargo test
-      - run:
-          name: Clippy
-          command: cargo clippy
+          command: cargo +stable test
