@@ -1555,7 +1555,7 @@ impl Tree {
       let mut manifest_project = manifest
         .projects
         .iter_mut()
-        .find(|(_k, v)| v.name == project_name)
+        .find(|(_k, v)| v.path.as_ref() == Some(&project_name))
         .ok_or_else(|| format_err!("failed to find project {} in manifest", project_name))?;
       manifest_project.1.revision = Some(format!("{}", project_status.commit));
     }
