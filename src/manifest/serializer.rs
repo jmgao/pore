@@ -4,6 +4,7 @@ use std::io::Write;
 use failure::{Error, ResultExt};
 
 use minidom::element::Element;
+use quick_xml::Writer;
 
 macro_rules! populate_from_option {
   ($elem: expr, $option: expr, $attribute_name: expr) => {{
@@ -72,6 +73,9 @@ pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), 
     root.append_child(elem.build());
   }
 
-  root.write_to(&mut output).context("failed to write manifest")?;
+  let mut fancy_writer = Writer::new_with_indent(&mut output, ' ' as u8, 4);
+  root.to_writer(&mut fancy_writer).context("failed to write manifest")?;
+  output.write(b"\n")?;
+
   Ok(())
 }
