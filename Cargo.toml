@@ -34,7 +34,7 @@ url = "2.0"
 git2 = "0.11"
 
 console = "0.9"
-indicatif = "0.12"
+indicatif = "0.13"
 
 tracing_facade = "0.1"
 tracing_chromium = "0.1"
