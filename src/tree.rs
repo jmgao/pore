@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
 use std::fmt;
+use std::iter::FromIterator;
 use std::ops::Deref;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chrono::prelude::*;
 use failure::Error;
 
 use crate::util::*;
@@ -518,6 +521,7 @@ impl Tree {
     projects: Vec<ProjectInfo>,
     fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
+    do_project_cleanup: bool,
   ) -> Result<i32, Error> {
     let config = Arc::new(config.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
@@ -699,9 +703,22 @@ impl Tree {
         }
       }
 
-      // TODO: Figure out repos that have been removed, and warn about them (or delete them?)
-      self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
-      self.write_config().context("failed to write tree config")?;
+      if do_project_cleanup {
+        let previous: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
+        self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
+        let current: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
+        let diff = previous.difference(&current);
+        for ref project in diff {
+          let src_path = self.path.join(project);
+          let date = Utc::now().format("%Y%m%d-%H%M%S").to_string();
+          let dst_path = self.path.join("lost+found").join(&date).join(project);
+          println!("Moving deleted project {} to {:?}", project, dst_path);
+          std::fs::create_dir_all(&dst_path).context("failed to create lost+found directory")?;
+          std::fs::rename(&src_path, &dst_path)
+            .context(format!("failed to move project from {:?} to {:?}", src_path, dst_path))?;
+        }
+        self.write_config().context("failed to write tree config")?;
+      }
     }
 
     Ok(0)
@@ -755,7 +772,7 @@ impl Tree {
 
       self.update_hooks()?;
 
-      self.sync_repos(&mut pool, config, manifest, Some(FetchTarget::Upstream), checkout)?;
+      self.sync_repos(&mut pool, config, manifest, Some(FetchTarget::Upstream), checkout, false)?;
     }
 
     let manifest = self.read_manifest()?;
@@ -770,6 +787,7 @@ impl Tree {
         Some(fetch_target)
       },
       checkout,
+      true,
     )?;
     Ok(0)
   }
