@@ -252,6 +252,14 @@ fn cmd_preupload(
   tree.preupload(config, &mut pool, preupload_under)
 }
 
+fn cmd_find_deleted(
+  config: &Config,
+  mut pool: &mut Pool,
+  tree: &mut Tree,
+) -> Result<i32, Error> {
+  tree.find_deleted(config, &mut pool)
+}
+
 fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, disabled_name: &str) -> Option<bool> {
   let last_enabled_index = matches.indices_of(enabled_name).map(Iterator::max);
   let last_disabled_index = matches.indices_of(disabled_name).map(Iterator::max);
@@ -411,6 +419,11 @@ fn main() {
           defaults to all repositories in the tree if unspecified"
       )
     )
+    (@subcommand find_deleted =>
+      (name: "find-deleted")
+      (about: "find projects that were removed from the manifest")
+    )
+
     (@subcommand manifest =>
       (about: "generate a manifest corresponding to the current state of the tree")
       (@arg OUTPUT: -o --output +takes_value value_name("FILE")
@@ -697,6 +710,12 @@ fn main() {
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_preupload(&config, &mut pool, &mut tree, preupload_under)
+      }
+
+      ("find-deleted", Some(_submatches)) => {
+        let cwd = std::env::current_dir().context("failed to get current working directory")?;
+        let mut tree = Tree::find_from_path(cwd.clone())?;
+        cmd_find_deleted(&config, &mut pool, &mut tree)
       }
 
       ("config", Some(_submatches)) => {

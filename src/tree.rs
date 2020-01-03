@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use chrono::prelude::*;
 use failure::Error;
+use walkdir::WalkDir;
 
 use crate::util::*;
 use crate::*;
@@ -1585,5 +1586,36 @@ impl Tree {
 
     manifest.serialize(output).context("failed to serialize manifest")?;
     Ok(0)
+  }
+
+  pub fn find_deleted(&self, _config: &Config, _pool: &mut Pool) -> Result<i32, Error> {
+    // First, find the repos in the tree.
+    let mut it = WalkDir::new(&self.path).into_iter();
+    let mut projects: HashSet<String> = HashSet::new();
+    loop {
+      let entry = match it.next() {
+        None => break,
+        Some(Err(err)) => panic!("ERROR: {}", err),
+        Some(Ok(entry)) => entry,
+      };
+      if entry.file_type().is_dir() {
+        if entry.file_name() == ".pore" {
+          it.skip_current_dir();
+        } else if entry.file_name() == ".git" {
+          let path = entry.path().parent().unwrap();
+          let relpath = pathdiff::diff_paths(&path, &self.path).unwrap();
+          projects.insert(relpath.to_str().unwrap().to_string());
+          it.skip_current_dir();
+        }
+      }
+    }
+
+    let expected: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
+    let diff: Vec<&String> = projects.difference(&expected).collect();
+    for p in &diff {
+      println!("{}", p);
+    }
+
+    Ok(if diff.is_empty() { 0 } else { 1 })
   }
 }

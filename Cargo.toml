@@ -31,6 +31,7 @@ dirs = "2.0"
 shellexpand = "1.0"
 pathdiff = "0.1"
 url = "2.0"
+walkdir = "2"
 
 git2 = "0.11"
 
