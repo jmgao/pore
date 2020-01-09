@@ -21,10 +21,6 @@ cargo install --git https://github.com/jmgao/pore --force
 By default, pore uses a configuration suited for AOSP development that stores its mirror in `~/.pore/android`.
 If you wish to change this, either use a symlink, or edit the output of `pore config` and save it to `~/.pore.toml`.
 
-### Caveats
-
-* `pore sync` currently does not warn when a project is removed from the manifest.
-
 ### License
 
 This project is licensed under the Apache License, Version 2.0.
