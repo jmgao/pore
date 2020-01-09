@@ -777,7 +777,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, sync_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, sync_under.clone())?;
     self.sync_repos(
       &mut pool,
       config,
@@ -788,7 +788,7 @@ impl Tree {
         Some(fetch_target)
       },
       checkout,
-      true,
+      sync_under == None,
     )?;
     Ok(0)
   }
