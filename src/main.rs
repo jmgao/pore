@@ -135,6 +135,7 @@ fn cmd_clone(
     fetch_type,
     FetchTarget::Upstream,
     CheckoutType::Checkout,
+    false,
   )
 }
 
@@ -146,6 +147,7 @@ fn cmd_sync(
   fetch_type: FetchType,
   fetch_target: FetchTarget,
   checkout: CheckoutType,
+  fetch_tags: bool,
 ) -> Result<i32, Error> {
   tree.sync(
     &config,
@@ -154,6 +156,7 @@ fn cmd_sync(
     fetch_type,
     fetch_target,
     checkout,
+    fetch_tags,
   )
 }
 
@@ -252,11 +255,7 @@ fn cmd_preupload(
   tree.preupload(config, &mut pool, preupload_under)
 }
 
-fn cmd_find_deleted(
-  config: &Config,
-  mut pool: &mut Pool,
-  tree: &mut Tree,
-) -> Result<i32, Error> {
+fn cmd_find_deleted(config: &Config, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
   tree.find_deleted(config, &mut pool)
 }
 
@@ -325,6 +324,7 @@ fn main() {
         (@arg BRANCH: -b --branch +takes_value +multiple number_of_values(1)
           "specify a branch to fetch (can be used multiple times)"
         )
+        (@arg FETCH_TAGS: -t --tags "fetch all remote tags")
       )
       (@arg PATH: ...
         "path(s) beneath which repositories are synced\n\
@@ -339,6 +339,7 @@ fn main() {
         "specify a branch to fetch (can be used multiple times)"
       )
       (@arg REFS_ONLY: -r --("refs-only") "don't checkout, only update the refs")
+      (@arg FETCH_TAGS: -t --tags "fetch all remote tags")
       (@arg PATH: ...
         "path(s) beneath which repositories are synced\n\
          defaults to all repositories in the tree if unspecified"
@@ -528,6 +529,7 @@ fn main() {
 
         let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
         let fetch_all = submatches.is_present("FETCH_ALL");
+        let fetch_tags = submatches.is_present("FETCH_TAGS") || fetch_all;
 
         let fetch_target = {
           if fetch_all {
@@ -548,6 +550,7 @@ fn main() {
           FetchType::Fetch,
           fetch_target,
           CheckoutType::NoCheckout,
+          fetch_tags,
         )
       }
 
@@ -563,6 +566,7 @@ fn main() {
 
         let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
         let fetch_all = submatches.is_present("FETCH_ALL");
+        let fetch_tags = submatches.is_present("FETCH_TAGS") || fetch_all;
 
         let fetch_target = {
           if fetch_all {
@@ -587,6 +591,7 @@ fn main() {
           } else {
             CheckoutType::Checkout
           },
+          fetch_tags,
         )
       }
 

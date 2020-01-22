@@ -120,6 +120,7 @@ impl Depot {
     remote_config: &config::RemoteConfig,
     project: &str,
     targets: Option<&[String]>,
+    fetch_tags: bool,
     depth: Option<i32>,
   ) -> Result<(), Error> {
     ensure!(!project.starts_with('/'), "invalid project path {}", project);
@@ -148,12 +149,13 @@ impl Depot {
     // libgit2 sometimes has pathologically bad performance while fetching some repositories.
     // We don't lose that much from shelling out to git to fetch, since we're mostly bound on bandwidth.
     let mut cmd = std::process::Command::new("git");
-    cmd
-      .arg("-C")
-      .arg(&objects_path)
-      .arg("fetch")
-      .arg(&remote_config.name)
-      .arg("--no-tags");
+    cmd.arg("-C").arg(&objects_path).arg("fetch").arg(&remote_config.name);
+
+    if fetch_tags {
+      cmd.arg("--tags");
+    } else {
+      cmd.arg("--no-tags");
+    }
 
     if let Some(depth) = depth {
       cmd.arg("--depth");
@@ -179,6 +181,10 @@ impl Depot {
     let objects_refs = objects_path.join("refs").join("remotes").join(&remote_config.name);
     let refs_refs = refs_path.join("refs").join("heads");
     Depot::replace_dir(&objects_refs, &refs_refs).context("failed to replace heads")?;
+
+    let objects_tags = objects_path.join("refs").join("tags");
+    let refs_tags = refs_path.join("refs").join("tags");
+    Depot::replace_dir(&objects_tags, &refs_tags).context("failed to replace tags")?;
 
     Ok(())
   }
@@ -227,15 +233,15 @@ impl Depot {
     let path: &Path = path.as_ref();
 
     // TODO: Respect <remote alias="...">?
-    let mirror_refs = self
-      .refs_mirror(&remote_config.name, project)
-      .join("refs")
-      .join("heads");
-    let repo_refs = Depot::git_path(path)
-      .join("refs")
-      .join("remotes")
-      .join(&remote_config.name);
+    let mirror_path = self.refs_mirror(&remote_config.name, project);
+    let repo_path = Depot::git_path(path);
+    let mirror_refs = mirror_path.join("refs").join("heads");
+    let repo_refs = mirror_path.join("refs").join("remotes").join(&remote_config.name);
 
-    Depot::replace_dir(&mirror_refs, &repo_refs)
+    Depot::replace_dir(&mirror_refs, &repo_refs).context("failed to replace remotes")?;
+
+    let mirror_tags = mirror_path.join("refs").join("tags");
+    let repo_tags = repo_path.join("refs").join("tags");
+    Depot::replace_dir(&mirror_tags, &repo_tags)
   }
 }

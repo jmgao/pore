@@ -389,6 +389,7 @@ impl Tree {
         &remote_config,
         &remote_config.manifest,
         Some(&[branch.to_string()]),
+        false,
         None,
       )?;
     }
@@ -523,6 +524,7 @@ impl Tree {
     fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
     do_project_cleanup: bool,
+    fetch_tags: bool,
   ) -> Result<i32, Error> {
     let config = Arc::new(config.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
@@ -550,7 +552,7 @@ impl Tree {
             FetchTarget::All => None,
           };
           depot
-            .fetch_repo(&remote, &project_info.project_name, target, None)
+            .fetch_repo(&remote, &project_info.project_name, target, fetch_tags, None)
             .context(format!("failed to fetch for project {}", project_info.project_name,))?;
 
           Ok(())
@@ -760,6 +762,7 @@ impl Tree {
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
+    fetch_tags: bool,
   ) -> Result<i32, Error> {
     if fetch_type == FetchType::Fetch {
       // Sync the manifest repo first.
@@ -773,7 +776,15 @@ impl Tree {
 
       self.update_hooks()?;
 
-      self.sync_repos(&mut pool, config, manifest, Some(FetchTarget::Upstream), checkout, false)?;
+      self.sync_repos(
+        &mut pool,
+        config,
+        manifest,
+        Some(FetchTarget::Upstream),
+        checkout,
+        false,
+        fetch_tags,
+      )?;
     }
 
     let manifest = self.read_manifest()?;
@@ -789,6 +800,7 @@ impl Tree {
       },
       checkout,
       sync_under == None,
+      fetch_tags,
     )?;
     Ok(0)
   }
