@@ -236,7 +236,7 @@ impl Depot {
     let mirror_path = self.refs_mirror(&remote_config.name, project);
     let repo_path = Depot::git_path(path);
     let mirror_refs = mirror_path.join("refs").join("heads");
-    let repo_refs = mirror_path.join("refs").join("remotes").join(&remote_config.name);
+    let repo_refs = repo_path.join("refs").join("remotes").join(&remote_config.name);
 
     Depot::replace_dir(&mirror_refs, &repo_refs).context("failed to replace remotes")?;
 
