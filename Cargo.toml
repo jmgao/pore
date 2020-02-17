@@ -20,7 +20,7 @@ toml = "0.5"
 # manifest::serialize::serializer passes a quick-xml value to minidom, so the quick-xml version
 # must match the version needed by minidom.
 quick-xml = "^0.14"
-minidom = "=0.11.0"
+minidom = "=0.12.0"
 
 clap = "2.32"
 maplit = "1.0"
