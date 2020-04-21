@@ -29,7 +29,7 @@ chrono = "0.4"
 copy_dir = "0.1.2"
 dirs = "2.0"
 shellexpand = "1.0"
-pathdiff = "0.1"
+pathdiff = "0.2"
 url = "2.0"
 walkdir = "2"
 
