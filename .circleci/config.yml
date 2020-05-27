@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: jmgao/ubuntu-cosmic-mingw-w64-rust:20190928
+      - image: jmgao/ubuntu-focal-mingw-w64-rust:latest
     steps:
       - checkout
       - run:
