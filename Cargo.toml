@@ -36,7 +36,7 @@ walkdir = "2"
 git2 = { path = "vendor/git2-rs" }
 
 console = "0.9"
-indicatif = "0.13"
+progpool = "0.1"
 
 tracing_facade = "0.1"
 tracing_chromium = "0.1"

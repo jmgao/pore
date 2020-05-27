@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use chrono::prelude::*;
 use failure::Error;
+use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
 use walkdir::WalkDir;
 
 use crate::util::*;
@@ -32,7 +33,6 @@ use crate::*;
 use config::RemoteConfig;
 use depot::Depot;
 use manifest::FileOperation;
-use pool::{ExecutionResult, ExecutionResults, Job, Pool};
 
 pub struct Tree {
   pub path: PathBuf,

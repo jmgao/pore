@@ -37,14 +37,12 @@ extern crate clap;
 #[macro_use]
 extern crate maplit;
 
-#[macro_use]
-extern crate tracing_facade;
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use failure::Error;
 use failure::ResultExt;
+use progpool::Pool;
 
 #[macro_export]
 macro_rules! fatal {
@@ -60,13 +58,11 @@ mod config;
 mod depot;
 mod hooks;
 mod manifest;
-mod pool;
 mod tree;
 mod util;
 
 use config::Config;
 use manifest::Manifest;
-use pool::Pool;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
 
 lazy_static! {
