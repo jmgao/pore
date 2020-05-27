@@ -644,7 +644,7 @@ impl Tree {
 
             // Set up symlinks to repo hooks.
             let hooks_dir = project_path.join(".git").join("hooks");
-            let relpath = pathdiff::diff_paths(&tree_root, &hooks_dir)
+            let relpath = pathdiff::diff_paths(tree_root.as_ref(), &hooks_dir)
               .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
               .join(".pore")
               .join("hooks");
@@ -1346,7 +1346,7 @@ impl Tree {
 
       job.add_task(project.project_path.clone(), move |_| -> Result<CommandResult, Error> {
         let path = tree_root.join(&project.project_path);
-        let rel_to_root = pathdiff::diff_paths(&tree_root, &path)
+        let rel_to_root = pathdiff::diff_paths(tree_root.as_ref(), &path)
           .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
 
         let result = std::process::Command::new("sh")

@@ -19,8 +19,8 @@ toml = "0.5"
 
 # manifest::serialize::serializer passes a quick-xml value to minidom, so the quick-xml version
 # must match the version needed by minidom.
-quick-xml = "^0.14"
-minidom = "=0.11.0"
+quick-xml = "^0.17"
+minidom = "=0.12.0"
 
 clap = "2.32"
 maplit = "1.0"
@@ -28,14 +28,14 @@ maplit = "1.0"
 chrono = "0.4"
 copy_dir = "0.1.2"
 dirs = "2.0"
-shellexpand = "1.0"
-pathdiff = "0.1"
+shellexpand = "2.0"
+pathdiff = "0.2"
 url = "2.0"
 walkdir = "2"
 
 git2 = { path = "vendor/git2-rs" }
 
-console = "0.9"
+console = "0.11"
 progpool = "0.1"
 
 tracing_facade = "0.1"
