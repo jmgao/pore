@@ -73,15 +73,24 @@ lazy_static! {
   static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
 }
 
-fn parse_target(target: &str) -> Result<(String, String), Error> {
+fn parse_target(target: &str) -> Result<(String, Option<String>, Option<String>), Error> {
   let vec: Vec<&str> = target.split('/').collect();
-  if vec.len() == 1 {
-    Ok((vec[0].into(), "master".into()))
-  } else if vec.len() == 2 {
-    Ok((vec[0].into(), vec[1].into()))
-  } else {
-    bail!("invalid target '{}'", target);
+  if vec.len() > 2 {
+    bail!("invalid target '{}'", target)
   }
+  let remote = vec[0].into();
+
+  if let Some(branch_file) = vec.get(1) {
+    let v: Vec<&str> = branch_file.split(':').collect();
+    if v.len() > 2 {
+      bail!("invalid target '{}'", target)
+    }
+    let branch = Some(v[0].into());
+    let file = v.get(1).map(|&s| s.into());
+    return Ok((remote, branch, file));
+  }
+
+  Ok((remote, None, None))
 }
 
 fn cmd_clone(
@@ -92,9 +101,11 @@ fn cmd_clone(
   group_filters: Option<&str>,
   fetch: bool,
 ) -> Result<i32, Error> {
-  let (remote, branch) = parse_target(target)?;
+  let (remote, branch, file) = parse_target(target)?;
   let remote_config = config.find_remote(&remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
+  let branch = branch.as_ref().unwrap_or(&remote_config.default_branch);
+  let file = file.as_ref().unwrap_or(&remote_config.default_manifest_file);
 
   let tree_root = PathBuf::from(directory.unwrap_or(&branch));
   if let Err(err) = std::fs::create_dir_all(&tree_root) {
@@ -116,7 +127,7 @@ fn cmd_clone(
     .unwrap_or_else(Vec::new);
 
   // TODO: Add locking?
-  let mut tree = Tree::construct(&depot, &tree_root, &remote_config, &branch, group_filters, fetch)?;
+  let mut tree = Tree::construct(&depot, &tree_root, &remote_config, &branch, &file, group_filters, fetch)?;
   let fetch_type = if fetch {
     // We just fetched the manifest.
     FetchType::FetchExceptManifest
