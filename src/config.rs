@@ -51,6 +51,20 @@ pub struct RemoteConfig {
   pub other_urls: Option<Vec<String>>,
   pub manifest: String,
   pub depot: String,
+
+  #[serde(default = "default_branch")]
+  pub default_branch: String,
+
+  #[serde(default = "default_manifest_file")]
+  pub default_manifest_file: String,
+}
+
+fn default_branch() -> String {
+  "master".into()
+}
+
+fn default_manifest_file() -> String {
+  "default.xml".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +84,8 @@ impl Default for Config {
           other_urls: Some(vec!["persistent-https://android.googlesource.com/".into()]),
           manifest: "platform/manifest".into(),
           depot: "android".into(),
+          default_branch: default_branch(),
+          default_manifest_file: default_manifest_file(),
         },
       ],
       depots: btreemap! {

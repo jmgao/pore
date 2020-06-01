@@ -369,6 +369,7 @@ impl Tree {
     path: T,
     remote_config: &RemoteConfig,
     branch: &str,
+    file: &str,
     group_filters: Vec<GroupFilter>,
     fetch: bool,
   ) -> Result<Tree, Error> {
@@ -381,8 +382,8 @@ impl Tree {
     std::fs::create_dir_all(&pore_path).context(format!("failed to create directory {:?}", pore_path))?;
 
     let manifest_path = pore_path.join("manifest");
-    create_symlink("manifest/default.xml", pore_path.join("manifest.xml"))
-      .context("failed to create manifest symlink")?;
+    let manifest_file = PathBuf::from("manifest").join(file);
+    create_symlink(manifest_file, pore_path.join("manifest.xml")).context("failed to create manifest symlink")?;
 
     if fetch {
       depot.fetch_repo(
