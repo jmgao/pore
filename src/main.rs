@@ -299,7 +299,7 @@ fn main() {
     (@subcommand init =>
       (about: "checkout a new tree into the current directory")
       (@arg TARGET: +required
-        "the target to checkout in the format <REMOTE>[/<BRANCH>]\n\
+        "the target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]\n\
          BRANCH defaults to master if unspecified"
       )
       (@arg GROUP_FILTERS: -g +takes_value
@@ -311,7 +311,7 @@ fn main() {
     (@subcommand clone =>
       (about: "checkout a new tree into a new directory")
       (@arg TARGET: +required
-        "the target to checkout in the format <REMOTE>[/<BRANCH>]\n\
+        "the target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]\n\
          BRANCH defaults to master if unspecified"
       )
       (@arg DIRECTORY:
