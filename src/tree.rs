@@ -538,7 +538,7 @@ impl Tree {
         let project_info = Arc::clone(&project);
         let target = Arc::clone(&target);
 
-        job.add_task(project_info.project_path.clone(), move |_| {
+        job.add_task(project_info.project_path.clone(), move |_| -> Result<(), Error> {
           let remote = config
             .find_remote(&project_info.remote)
             .context(format!("failed to find remote {}", project_info.remote))?;
@@ -814,7 +814,7 @@ impl Tree {
     config: &Config,
     pool: &mut Pool,
     status_under: Option<Vec<&str>>,
-  ) -> Result<ExecutionResults<ProjectStatus>, Error> {
+  ) -> Result<ExecutionResults<ProjectStatus, Error>, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(config, &manifest, status_under)?;
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
