@@ -77,17 +77,15 @@ impl Default for Config {
     Config {
       autosubmit: default_autosubmit(),
       presubmit: default_presubmit(),
-      remotes: vec![
-        RemoteConfig {
-          name: "aosp".into(),
-          url: "https://android.googlesource.com/".into(),
-          other_urls: Some(vec!["persistent-https://android.googlesource.com/".into()]),
-          manifest: "platform/manifest".into(),
-          depot: "android".into(),
-          default_branch: default_branch(),
-          default_manifest_file: default_manifest_file(),
-        },
-      ],
+      remotes: vec![RemoteConfig {
+        name: "aosp".into(),
+        url: "https://android.googlesource.com/".into(),
+        other_urls: Some(vec!["persistent-https://android.googlesource.com/".into()]),
+        manifest: "platform/manifest".into(),
+        depot: "android".into(),
+        default_branch: default_branch(),
+        default_manifest_file: default_manifest_file(),
+      }],
       depots: btreemap! {
         "android".into() => DepotConfig {
           path: "~/.pore/android".into(),
