@@ -158,7 +158,7 @@ pub fn find_independent_commits(
   let mut revwalk = repo.revwalk()?;
   revwalk.hide(dst.id())?;
   revwalk.push(src.id())?;
-  Ok(revwalk.collect::<Result<Vec<_>,_>>()?)
+  Ok(revwalk.collect::<Result<Vec<_>, _>>()?)
 }
 
 pub fn read_line() -> Result<String, Error> {
