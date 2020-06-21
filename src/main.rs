@@ -37,6 +37,7 @@ extern crate clap;
 #[macro_use]
 extern crate maplit;
 
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -277,6 +278,31 @@ fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, 
   }
 }
 
+// Sets GIT_TRACE2_PARENT_SID for matching multiple git traces to a single pore session
+//
+// See:
+//   https://github.com/git/git/blob/master/trace2/tr2_sid.c
+//   https://gerrit-review.googlesource.com/c/git-repo/+/254331
+fn set_trace_id() {
+  let key = "GIT_TRACE2_PARENT_SID";
+
+  let mut my_id = match std::env::var_os(key) {
+    Some(mut val) => {
+      val.push("/");
+      val
+    }
+    None => OsString::new(),
+  };
+
+  my_id.push(format!(
+    "pore-{}-P{:08x}",
+    chrono::Utc::now().format("%Y%m%dT%H%M%S%.6fZ"),
+    std::process::id()
+  ));
+
+  std::env::set_var(key, my_id)
+}
+
 fn main() {
   let app = clap_app!(pore =>
     (version: crate_version!())
@@ -463,6 +489,8 @@ fn main() {
       fatal!("failed to set working directory to {}: {}", cwd, err);
     }
   }
+
+  set_trace_id();
 
   let config_path = match matches.value_of("CONFIG") {
     Some(path) => {
