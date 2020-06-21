@@ -122,7 +122,7 @@ impl Project {
       .or_else(|_| self.find_revision(manifest))
       .context(format!("project {} has no dest_branch or revision", self.name))?;
 
-    Ok(dest_branch.clone())
+    Ok(dest_branch)
   }
 }
 
@@ -189,7 +189,7 @@ impl Manifest {
       if url == canonicalize_url(&remote.url) {
         return Ok(remote.name.clone());
       }
-      for other_url in remote.other_urls.as_ref().map(|v| v.as_slice()).unwrap_or(&[]) {
+      for other_url in remote.other_urls.as_deref().unwrap_or(&[]) {
         if url == canonicalize_url(other_url) {
           return Ok(remote.name.clone());
         }

@@ -73,9 +73,9 @@ pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), 
     root.append_child(elem.build());
   }
 
-  let mut fancy_writer = Writer::new_with_indent(&mut output, ' ' as u8, 4);
+  let mut fancy_writer = Writer::new_with_indent(&mut output, b' ', 4);
   root.to_writer(&mut fancy_writer).context("failed to write manifest")?;
-  output.write(b"\n")?;
+  output.write_all(b"\n")?;
 
   Ok(())
 }
