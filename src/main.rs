@@ -66,11 +66,11 @@ use manifest::Manifest;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
 
 lazy_static! {
-  static ref AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().green() };
-  static ref NON_AOSP_REMOTE_STYLE: console::Style = { console::Style::new().bold().red() };
-  static ref SLASH_STYLE: console::Style = { console::Style::new().bold() };
-  static ref BRANCH_STYLE: console::Style = { console::Style::new().bold().blue() };
-  static ref PROJECT_STYLE: console::Style = { console::Style::new().bold() };
+  static ref AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().green();
+  static ref NON_AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().red();
+  static ref SLASH_STYLE: console::Style = console::Style::new().bold();
+  static ref BRANCH_STYLE: console::Style = console::Style::new().bold().blue();
+  static ref PROJECT_STYLE: console::Style = console::Style::new().bold();
 }
 
 fn parse_target(target: &str) -> Result<(String, Option<String>, Option<String>), Error> {
