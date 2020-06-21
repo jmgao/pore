@@ -531,7 +531,7 @@ fn main() {
 
       ("fetch", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let fetch_under = submatches.values_of("PATH").map(Iterator::collect);
 
         let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
@@ -568,7 +568,7 @@ fn main() {
           FetchType::Fetch
         };
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let sync_under = submatches.values_of("PATH").map(Iterator::collect);
 
         let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
@@ -611,7 +611,7 @@ fn main() {
 
       ("upload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let autosubmit = get_overridable_option_value(&submatches, "AUTOSUBMIT", "NO_AUTOSUBMIT");
         let presubmit = get_overridable_option_value(&submatches, "PRESUBMIT", "NO_PRESUBMIT");
 
@@ -635,14 +635,14 @@ fn main() {
 
       ("prune", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let prune_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_prune(&config, &mut pool, &mut tree, prune_under)
       }
 
       ("rebase", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let interactive = submatches.is_present("INTERACTIVE");
         let autosquash = submatches.is_present("AUTOSQUASH");
         let rebase_under = submatches.values_of("PATH").map(Iterator::collect);
@@ -651,7 +651,7 @@ fn main() {
 
       ("status", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let tree = Tree::find_from_path(cwd.clone())?;
+        let tree = Tree::find_from_path(cwd)?;
         let status_under = submatches.values_of("PATH").map(Iterator::collect);
 
         let results = tree.status(&config, &mut pool, status_under)?;
@@ -703,13 +703,13 @@ fn main() {
       ("manifest", Some(submatches)) => {
         let output = submatches.value_of("OUTPUT");
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let tree = Tree::find_from_path(cwd.clone())?;
+        let tree = Tree::find_from_path(cwd)?;
         tree.generate_manifest(&config, &mut pool, output)
       }
 
       ("forall", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let forall_under = submatches.values_of("PATH").map(Iterator::collect);
         let command = submatches
           .value_of("COMMAND")
@@ -719,14 +719,14 @@ fn main() {
 
       ("preupload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_preupload(&config, &mut pool, &mut tree, preupload_under)
       }
 
       ("find-deleted", Some(_submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let mut tree = Tree::find_from_path(cwd)?;
         cmd_find_deleted(&config, &mut pool, &mut tree)
       }
 

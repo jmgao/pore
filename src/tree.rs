@@ -82,7 +82,7 @@ impl GroupFilter {
       return true;
     }
 
-    let groups = project.groups.as_ref().map(Vec::as_slice).unwrap_or(&[]);
+    let groups = project.groups.as_deref().unwrap_or(&[]);
 
     let mut included = false;
     let mut excluded = false;
@@ -231,7 +231,7 @@ impl<'repo> BranchInfo<'repo> {
 
     Ok(BranchInfo {
       name: name.to_string(),
-      commit: commit,
+      commit,
     })
   }
 
@@ -256,7 +256,7 @@ impl<'repo> BranchInfo<'repo> {
   }
 
   fn name_without_remote(&self) -> &str {
-    let components: Vec<&str> = self.name.split("/").collect();
+    let components: Vec<&str> = self.name.split('/').collect();
     assert!(components.len() == 1 || components.len() == 2);
     components.last().unwrap()
   }
@@ -337,7 +337,7 @@ fn summarize_upload(
   src: &BranchInfo,
   dest: &BranchInfo,
   dest_remote: &str,
-  commits: &Vec<git2::Oid>,
+  commits: &[git2::Oid],
 ) -> Result<UploadSummary, Error> {
   let mut commit_summaries: Vec<CommitSummary> = Vec::new();
 
@@ -359,7 +359,7 @@ fn summarize_upload(
     src_branch: src.name.to_string(),
     dest_remote: dest_remote.to_string(),
     dest_branch: dest.name_without_remote().to_string(),
-    commit_summaries: commit_summaries,
+    commit_summaries,
   })
 }
 
@@ -406,7 +406,7 @@ impl Tree {
     };
 
     let tree = Tree {
-      path: tree_root.clone(),
+      path: tree_root,
       config: tree_config,
     };
 
@@ -469,7 +469,7 @@ impl Tree {
       .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
-    let group_filters = self.config.group_filters.as_ref().map(Vec::as_slice).unwrap_or(&[]);
+    let group_filters = self.config.group_filters.as_deref().unwrap_or(&[]);
 
     // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
     // but repo doesn't handle this either.
@@ -961,7 +961,7 @@ impl Tree {
   ) -> Result<i32, Error> {
     // TODO: Figure out how 0 (all projects) should work.
     ensure!(
-      upload_under.as_ref().map_or(false, |v| v.len() >= 1),
+      upload_under.as_ref().map_or(false, |v| !v.is_empty()),
       "pathless upload not yet implemented; must specify which projects to upload"
     );
 
@@ -1013,7 +1013,7 @@ impl Tree {
       )?;
 
       let commits = util::find_independent_commits(&repo, &src_branch_info.commit, &dest_branch_info.commit)?;
-      if commits.len() == 0 {
+      if commits.is_empty() {
         bail!(format!("No commits to upload for {}", &project.project_path));
       }
 
@@ -1031,23 +1031,23 @@ impl Tree {
         &remote_name,
         &dest_branch_info.name_without_remote(),
         &util::UploadOptions {
-          ccs: ccs,
-          reviewers: reviewers,
+          ccs,
+          reviewers,
           topic: if branch_name_as_topic {
             Some(src_branch_info.name)
           } else {
             None
           },
-          autosubmit: autosubmit,
-          presubmit_ready: presubmit_ready,
-          private: private,
-          wip: wip,
+          autosubmit,
+          presubmit_ready,
+          private,
+          wip,
         },
       );
 
       uploads.push(UploadInfo {
         project_path: project.project_path.clone(),
-        summary: summary,
+        summary,
         command: cmd,
       })
     }
