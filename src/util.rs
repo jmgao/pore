@@ -40,12 +40,29 @@ pub fn assert_empty_directory<T: AsRef<Path> + Debug>(directory_path: T) -> Resu
   Ok(())
 }
 
+#[cfg(unix)]
+fn symlink<T: AsRef<Path> + Debug, U: AsRef<Path> + Debug>(target: T, symlink_path: U) -> Result<(), std::io::Error> {
+  std::os::unix::fs::symlink(target, symlink_path)
+}
+
+#[cfg(windows)]
+fn symlink<T: AsRef<Path> + Debug, U: AsRef<Path> + Debug>(target: T, symlink_path: U) -> Result<(), std::io::Error> {
+  let target = target.as_ref();
+  let symlink_path = symlink_path.as_ref();
+  if target.is_dir() {
+    std::os::windows::fs::symlink_dir(target, symlink_path)
+  } else {
+    std::os::windows::fs::symlink_file(target, symlink_path)
+  }
+}
+
+
 /// Create a symlink, or if it already exists, check that it points to the right place.
 pub fn create_symlink<T: AsRef<Path> + Debug, U: AsRef<Path> + Debug>(target: T, symlink_path: U) -> Result<(), Error> {
   let target = target.as_ref();
   let symlink_path = symlink_path.as_ref();
 
-  match std::os::unix::fs::symlink(target, symlink_path) {
+  match symlink(target, symlink_path) {
     Ok(()) => Ok(()),
     Err(err) => {
       if err.kind() == std::io::ErrorKind::AlreadyExists {
