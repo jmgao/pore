@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Deref;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -741,9 +742,16 @@ impl Tree {
       file
         .write_all(contents.as_bytes())
         .context(format!("failed to create hook at {:?}", path))?;
-      let mut permissions = file.metadata()?.permissions();
-      permissions.set_mode(0o700);
-      file.set_permissions(permissions)?;
+      // Currently no std APIs for dealing with file permissions on Windows.
+      // Not running this on Windows probably isn't an issue since everything
+      // should be executable unless the code was checked out to a directory
+      // that prohibits it.
+      #[cfg(unix)]
+      {
+        let mut permissions = file.metadata()?.permissions();
+        permissions.set_mode(0o700);
+        file.set_permissions(permissions)?;
+      }
     }
     Ok(())
   }
