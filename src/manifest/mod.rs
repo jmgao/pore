@@ -35,6 +35,7 @@ pub struct Manifest {
   pub projects: BTreeMap<PathBuf, Project>,
   pub default: Option<Default>,
   pub manifest_server: Option<ManifestServer>,
+  pub superproject: Option<SuperProject>,
   pub repo_hooks: Option<RepoHooks>,
 }
 
@@ -58,6 +59,12 @@ pub struct Default {
 #[derive(Debug)]
 pub struct ManifestServer {
   pub url: String,
+}
+
+#[derive(Debug)]
+pub struct SuperProject {
+  pub name: String,
+  pub remote: String,
 }
 
 #[derive(Default, Debug)]
