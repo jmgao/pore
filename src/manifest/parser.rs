@@ -138,6 +138,7 @@ fn parse_manifest(
 
         b"default" => populate_option!(manifest.default, parse_default(&e, &reader)?),
         b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, &reader)?),
+        b"superproject" => populate_option!(manifest.superproject, parse_superproject(&e, &reader)?),
         b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, &reader)?),
 
         _ => bail!(
@@ -312,6 +313,27 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<impl BufRead>) -> R
 
   ensure!(url != None, "url not specified in <manifest-server>");
   Ok(ManifestServer { url: url.unwrap() })
+}
+
+fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<SuperProject, Error> {
+  let mut name = None;
+  let mut remote = None;
+  for attribute in event.attributes() {
+    let attribute = attribute?;
+    let value = attribute.unescape_and_decode_value(&reader)?;
+    match attribute.key {
+      b"name" => populate_option!(name, value),
+      b"remote" => populate_option!(remote, value),
+      key => eprintln!(
+        "warning: unexpected attribute in <manifest-server>: {}",
+        std::str::from_utf8(key).unwrap_or("???")
+      ),
+    }
+  }
+
+  ensure!(name != None, "name not specified in <superproject>");
+  ensure!(remote != None, "remote not specified in <superproject>");
+  Ok(SuperProject { name: name.unwrap(), remote: remote.unwrap() })
 }
 
 fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_children: bool) -> Result<Project, Error> {
