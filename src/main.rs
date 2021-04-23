@@ -693,12 +693,15 @@ fn main() {
 
           dirty = true;
 
+          let ahead_behind = format!("[ahead {}, behind {}]",
+            console::style(project_status.ahead.to_string()).green(),
+            console::style(project_status.behind.to_string()).red());
           let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
           let branch = match &project_status.branch {
-            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
+            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {:32}", branch)),
             None => console::style("(*** NO BRANCH ***)".to_string()).red(),
           };
-          println!("{}{}", project_line, branch);
+          println!("{}{}{}", project_line, branch, ahead_behind);
 
           for file in &project_status.files {
             let index = file.index.to_char().to_uppercase().to_string();
