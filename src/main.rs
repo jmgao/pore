@@ -70,7 +70,7 @@ lazy_static! {
   static ref AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().green();
   static ref NON_AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().red();
   static ref SLASH_STYLE: console::Style = console::Style::new().bold();
-  static ref BRANCH_STYLE: console::Style = console::Style::new().bold().blue();
+  static ref BRANCH_STYLE: console::Style = console::Style::new().bold().cyan();
   static ref PROJECT_STYLE: console::Style = console::Style::new().bold();
 }
 
