@@ -693,12 +693,27 @@ fn main() {
 
           dirty = true;
 
-          let ahead_behind = format!("[ahead {}, behind {}]",
-            console::style(project_status.ahead.to_string()).green(),
-            console::style(project_status.behind.to_string()).red());
+          let ahead = if project_status.ahead != 0 {
+            Some(console::style(format!("↑{}", project_status.ahead)).green())
+          } else {
+            None
+          };
+
+          let behind = if project_status.behind != 0 {
+            Some(console::style(format!("↓{}", project_status.behind)).red())
+          } else {
+            None
+          };
+
+          let ahead_behind = match (ahead, behind) {
+            (Some(a), Some(b)) => format!(" [{} {}]", a, b),
+            (Some(a), None) => format!(" [{}]", a),
+            (None, Some(b)) => format!(" [{}]", b),
+            (None, None) => "".to_string(),
+          };
           let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
           let branch = match &project_status.branch {
-            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {:32}", branch)),
+            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
             None => console::style("(*** NO BRANCH ***)".to_string()).red(),
           };
           println!("{}{}{}", project_line, branch, ahead_behind);
