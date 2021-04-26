@@ -715,7 +715,7 @@ fn main() {
           let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
           let branch = match &project_status.branch {
             Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
-            None => console::style("(*** NO BRANCH ***)".to_string()).red(),
+            None => console::style("no branch".to_string()).red(),
           };
           println!("{}{}{}", project_line, branch, ahead_behind);
 
