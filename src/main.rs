@@ -687,11 +687,6 @@ fn main() {
         for result in results.successful {
           let project_name = &result.name;
           let project_status = &result.result;
-          if project_status.branch == None && project_status.files.is_empty() {
-            continue;
-          }
-
-          dirty = true;
 
           let ahead = if project_status.ahead != 0 {
             Some(console::style(format!("↑{}", project_status.ahead)).green())
@@ -704,6 +699,12 @@ fn main() {
           } else {
             None
           };
+
+          if project_status.ahead == 0 && project_status.behind == 0 && project_status.files.is_empty() {
+            continue;
+          }
+
+          dirty = true;
 
           let ahead_behind = match (ahead, behind) {
             (Some(a), Some(b)) => format!(" [{} {}]", a, b),
