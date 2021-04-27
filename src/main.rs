@@ -687,18 +687,37 @@ fn main() {
         for result in results.successful {
           let project_name = &result.name;
           let project_status = &result.result;
-          if project_status.branch == None && project_status.files.is_empty() {
+
+          let ahead = if project_status.ahead != 0 {
+            Some(console::style(format!("↑{}", project_status.ahead)).green())
+          } else {
+            None
+          };
+
+          let behind = if project_status.behind != 0 {
+            Some(console::style(format!("↓{}", project_status.behind)).red())
+          } else {
+            None
+          };
+
+          if project_status.ahead == 0 && project_status.behind == 0 && project_status.files.is_empty() {
             continue;
           }
 
           dirty = true;
 
+          let ahead_behind = match (ahead, behind) {
+            (Some(a), Some(b)) => format!(" [{} {}]", a, b),
+            (Some(a), None) => format!(" [{}]", a),
+            (None, Some(b)) => format!(" [{}]", b),
+            (None, None) => "".to_string(),
+          };
           let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
           let branch = match &project_status.branch {
             Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
-            None => console::style("(*** NO BRANCH ***)".to_string()).red(),
+            None => console::style("no branch".to_string()).red(),
           };
-          println!("{}{}", project_line, branch);
+          println!("{}{}{}", project_line, branch, ahead_behind);
 
           for file in &project_status.files {
             let index = file.index.to_char().to_uppercase().to_string();
