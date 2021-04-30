@@ -246,9 +246,10 @@ fn cmd_rebase(
 }
 
 struct ProjectStatusDisplayData {
-  location: console::StyledObject<String>,
+  location: String,
   branch: String,
-  files: Vec<console::StyledObject<String>>,
+  top_commit: String,
+  files: Vec<String>,
 }
 
 impl ProjectStatusDisplayData {
@@ -278,8 +279,9 @@ impl ProjectStatusDisplayData {
     };
 
     ProjectStatusDisplayData {
-      location: PROJECT_STYLE.apply_to(format!("project {}", status.name)),
+      location: PROJECT_STYLE.apply_to(format!("project {}", status.name)).to_string(),
       branch: format!("{}{}", branch, ahead_behind),
+      top_commit: status.commit_summary.clone().unwrap_or_default(),
       files: status
         .files
         .iter()
@@ -293,7 +295,7 @@ impl ProjectStatusDisplayData {
             line = line.green();
           }
 
-          line
+          line.to_string()
         })
         .collect(),
     }
@@ -303,11 +305,13 @@ impl ProjectStatusDisplayData {
 struct TreeStatusDisplayData {
   projects: Vec<ProjectStatusDisplayData>,
   max_project_length: usize,
+  max_branch_length: usize,
 }
 
 impl TreeStatusDisplayData {
   pub fn from_results(results: Vec<&tree::ProjectStatus>) -> TreeStatusDisplayData {
     let mut max_project_length = 0;
+    let mut max_branch_length = 0;
 
     let mut projects = Vec::new();
     for result in results {
@@ -317,7 +321,11 @@ impl TreeStatusDisplayData {
 
       let project = ProjectStatusDisplayData::from_status(&result);
 
-      max_project_length = cmp::max(max_project_length, project.location.to_string().chars().count());
+      max_project_length = cmp::max(
+        max_project_length,
+        console::measure_text_width(project.location.as_str()),
+      );
+      max_branch_length = cmp::max(max_branch_length, console::measure_text_width(project.branch.as_str()));
 
       projects.push(project);
     }
@@ -325,6 +333,7 @@ impl TreeStatusDisplayData {
     TreeStatusDisplayData {
       projects,
       max_project_length,
+      max_branch_length,
     }
   }
 
@@ -342,12 +351,25 @@ fn cmd_status(
   let results = tree.status(&config, &mut pool, status_under)?;
   let mut dirty = false;
 
+  let column_padding = 4;
   let display_data = TreeStatusDisplayData::from_results(results.successful.iter().map(|r| &r.result).collect());
   for project in display_data.projects {
     dirty = true;
 
-    let project_column = format!("{:width$} ", project.location, width = display_data.max_project_length);
-    println!("{}{}", project_column, project.branch);
+    let project_column = console::pad_str(
+      project.location.as_str(),
+      display_data.max_project_length + column_padding,
+      console::Alignment::Left,
+      None,
+    );
+    let branch_column = console::pad_str(
+      project.branch.as_str(),
+      display_data.max_branch_length + column_padding,
+      console::Alignment::Left,
+      None,
+    );
+    let summary = console::truncate_str(project.top_commit.as_str(), 53, "...");
+    println!("{}{}{}", project_column, branch_column, summary);
 
     for line in &project.files {
       println!("{}", line)
