@@ -37,6 +37,7 @@ extern crate clap;
 #[macro_use]
 extern crate maplit;
 
+use std::cmp;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -684,6 +685,16 @@ fn main() {
 
         let results = tree.status(&config, &mut pool, status_under)?;
         let mut dirty = false;
+
+        fn should_report(status: &tree::ProjectStatus) -> bool {
+          return status.ahead != 0 || status.behind != 0 || !status.files.is_empty();
+        }
+
+        let max_project_length = results
+          .successful
+          .iter()
+          .filter(|result| should_report(&result.result))
+          .fold(0, |max, result| cmp::max(max, result.name.chars().count()));
         for result in results.successful {
           let project_name = &result.name;
           let project_status = &result.result;
@@ -700,7 +711,7 @@ fn main() {
             None
           };
 
-          if project_status.ahead == 0 && project_status.behind == 0 && project_status.files.is_empty() {
+          if !should_report(&project_status) {
             continue;
           }
 
@@ -712,7 +723,11 @@ fn main() {
             (None, Some(b)) => format!(" [{}]", b),
             (None, None) => "".to_string(),
           };
-          let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
+          let project_line = PROJECT_STYLE.apply_to(format!(
+            "project {:width$}      ",
+            project_name,
+            width = max_project_length
+          ));
           let branch = match &project_status.branch {
             Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
             None => console::style("no branch".to_string()).red(),
