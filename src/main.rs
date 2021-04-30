@@ -245,6 +245,129 @@ fn cmd_rebase(
   tree.rebase(config, &mut pool, interactive, autosquash, rebase_under)
 }
 
+struct ProjectStatusDisplayData {
+  location: console::StyledObject<String>,
+  branch: String,
+  files: Vec<console::StyledObject<String>>,
+}
+
+impl ProjectStatusDisplayData {
+  pub fn from_status(status: &tree::ProjectStatus) -> ProjectStatusDisplayData {
+    let ahead = if status.ahead != 0 {
+      Some(console::style(format!("↑{}", status.ahead)).green())
+    } else {
+      None
+    };
+
+    let behind = if status.behind != 0 {
+      Some(console::style(format!("↓{}", status.behind)).red())
+    } else {
+      None
+    };
+
+    let ahead_behind = match (ahead, behind) {
+      (Some(a), Some(b)) => format!(" [{} {}]", a, b),
+      (Some(a), None) => format!(" [{}]", a),
+      (None, Some(b)) => format!(" [{}]", b),
+      (None, None) => "".to_string(),
+    };
+
+    let branch = match &status.branch {
+      Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
+      None => console::style("no branch".to_string()).red(),
+    };
+
+    ProjectStatusDisplayData {
+      location: PROJECT_STYLE.apply_to(format!("project {}", status.name)),
+      branch: format!("{}{}", branch, ahead_behind),
+      files: status
+        .files
+        .iter()
+        .map(|file| {
+          let index = file.index.to_char().to_uppercase().to_string();
+          let worktree = file.worktree.to_char();
+          let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
+          if file.worktree != FileState::Unchanged {
+            line = line.red();
+          } else {
+            line = line.green();
+          }
+
+          line
+        })
+        .collect(),
+    }
+  }
+}
+
+struct TreeStatusDisplayData {
+  projects: Vec<ProjectStatusDisplayData>,
+  max_project_length: usize,
+}
+
+impl TreeStatusDisplayData {
+  pub fn from_results(results: Vec<&tree::ProjectStatus>) -> TreeStatusDisplayData {
+    let mut max_project_length = 0;
+
+    let mut projects = Vec::new();
+    for result in results {
+      if !TreeStatusDisplayData::should_report(&result) {
+        continue;
+      }
+
+      let project = ProjectStatusDisplayData::from_status(&result);
+
+      max_project_length = cmp::max(max_project_length, project.location.to_string().chars().count());
+
+      projects.push(project);
+    }
+
+    TreeStatusDisplayData {
+      projects,
+      max_project_length,
+    }
+  }
+
+  pub fn should_report(status: &tree::ProjectStatus) -> bool {
+    return status.ahead != 0 || status.behind != 0 || !status.files.is_empty();
+  }
+}
+
+fn cmd_status(
+  config: &Config,
+  mut pool: &mut Pool,
+  tree: &Tree,
+  status_under: Option<Vec<&str>>,
+) -> Result<i32, Error> {
+  let results = tree.status(&config, &mut pool, status_under)?;
+  let mut dirty = false;
+
+  let display_data = TreeStatusDisplayData::from_results(results.successful.iter().map(|r| &r.result).collect());
+  for project in display_data.projects {
+    dirty = true;
+
+    let project_column = format!("{:width$} ", project.location, width = display_data.max_project_length);
+    println!("{}{}", project_column, project.branch);
+
+    for line in &project.files {
+      println!("{}", line)
+    }
+  }
+
+  if !results.failed.is_empty() {
+    for error in results.failed {
+      eprintln!("{}: {}", error.name, error.result);
+    }
+    bail!("failed to git status");
+  }
+
+  if dirty {
+    Ok(1)
+  } else {
+    Ok(0)
+  }
+}
+
 fn cmd_forall(
   config: &Config,
   mut pool: &mut Pool,
@@ -682,84 +805,7 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let status_under = submatches.values_of("PATH").map(Iterator::collect);
-
-        let results = tree.status(&config, &mut pool, status_under)?;
-        let mut dirty = false;
-
-        fn should_report(status: &tree::ProjectStatus) -> bool {
-          return status.ahead != 0 || status.behind != 0 || !status.files.is_empty();
-        }
-
-        let max_project_length = results
-          .successful
-          .iter()
-          .filter(|result| should_report(&result.result))
-          .fold(0, |max, result| cmp::max(max, result.name.chars().count()));
-        for result in results.successful {
-          let project_name = &result.name;
-          let project_status = &result.result;
-
-          let ahead = if project_status.ahead != 0 {
-            Some(console::style(format!("↑{}", project_status.ahead)).green())
-          } else {
-            None
-          };
-
-          let behind = if project_status.behind != 0 {
-            Some(console::style(format!("↓{}", project_status.behind)).red())
-          } else {
-            None
-          };
-
-          if !should_report(&project_status) {
-            continue;
-          }
-
-          dirty = true;
-
-          let ahead_behind = match (ahead, behind) {
-            (Some(a), Some(b)) => format!(" [{} {}]", a, b),
-            (Some(a), None) => format!(" [{}]", a),
-            (None, Some(b)) => format!(" [{}]", b),
-            (None, None) => "".to_string(),
-          };
-          let project_line = PROJECT_STYLE.apply_to(format!(
-            "project {:width$}      ",
-            project_name,
-            width = max_project_length
-          ));
-          let branch = match &project_status.branch {
-            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
-            None => console::style("no branch".to_string()).red(),
-          };
-          println!("{}{}{}", project_line, branch, ahead_behind);
-
-          for file in &project_status.files {
-            let index = file.index.to_char().to_uppercase().to_string();
-            let worktree = file.worktree.to_char();
-            let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
-            if file.worktree != FileState::Unchanged {
-              line = line.red();
-            } else {
-              line = line.green();
-            }
-
-            println!("{}", line)
-          }
-        }
-
-        if !results.failed.is_empty() {
-          for error in results.failed {
-            eprintln!("{}: {}", error.name, error.result);
-          }
-          bail!("failed to git status");
-        }
-
-        if dirty {
-          Ok(1)
-        } else {
-          Ok(0)
-        }
+        cmd_status(&config, &mut pool, &tree, status_under)
       }
 
       ("manifest", Some(submatches)) => {

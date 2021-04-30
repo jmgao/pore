@@ -209,6 +209,7 @@ pub struct FileStatus {
 
 #[derive(Debug)]
 pub struct ProjectStatus {
+  pub name: String,
   pub branch: Option<String>,
   pub commit: git2::Oid,
   pub files: Vec<FileStatus>,
@@ -895,14 +896,21 @@ impl Tree {
           })
           .collect();
 
-          let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
-          let upstream_commit = upstream_object
-            .peel_to_commit()
-            .context("failed to peel upstream object to commit")?;
+        let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
+        let upstream_commit = upstream_object
+          .peel_to_commit()
+          .context("failed to peel upstream object to commit")?;
 
-          let (ahead, behind) = repo.graph_ahead_behind(commit, upstream_commit.id())?;
+        let (ahead, behind) = repo.graph_ahead_behind(commit, upstream_commit.id())?;
 
-        Ok(ProjectStatus { branch, commit, files, ahead, behind })
+        Ok(ProjectStatus {
+          name: project.project_name.clone(),
+          branch,
+          commit,
+          files,
+          ahead,
+          behind,
+        })
       });
     }
 
