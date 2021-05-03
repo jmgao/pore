@@ -209,8 +209,10 @@ pub struct FileStatus {
 
 #[derive(Debug)]
 pub struct ProjectStatus {
+  pub name: String,
   pub branch: Option<String>,
   pub commit: git2::Oid,
+  pub commit_summary: Option<String>,
   pub files: Vec<FileStatus>,
   pub ahead: usize,
   pub behind: usize,
@@ -843,7 +845,7 @@ impl Tree {
         let head = repo
           .head()
           .context(format!("failed to get HEAD for repository {}", project.project_path))?;
-        let commit = head.peel_to_commit().context("failed to peel HEAD to commit")?.id();
+        let commit = head.peel_to_commit().context("failed to peel HEAD to commit")?;
         let branch = if head.is_branch() {
           Some(head.shorthand().unwrap().to_string())
         } else {
@@ -895,14 +897,22 @@ impl Tree {
           })
           .collect();
 
-          let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
-          let upstream_commit = upstream_object
-            .peel_to_commit()
-            .context("failed to peel upstream object to commit")?;
+        let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
+        let upstream_commit = upstream_object
+          .peel_to_commit()
+          .context("failed to peel upstream object to commit")?;
 
-          let (ahead, behind) = repo.graph_ahead_behind(commit, upstream_commit.id())?;
+        let (ahead, behind) = repo.graph_ahead_behind(commit.id(), upstream_commit.id())?;
 
-        Ok(ProjectStatus { branch, commit, files, ahead, behind })
+        Ok(ProjectStatus {
+          name: project.project_name.clone(),
+          branch,
+          commit: commit.id(),
+          commit_summary: commit.summary().map_or(None, |s| Some(s.to_string())),
+          files,
+          ahead,
+          behind,
+        })
       });
     }
 

@@ -37,6 +37,7 @@ extern crate clap;
 #[macro_use]
 extern crate maplit;
 
+use std::cmp;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -242,6 +243,151 @@ fn cmd_rebase(
   rebase_under: Option<Vec<&str>>,
 ) -> Result<i32, Error> {
   tree.rebase(config, &mut pool, interactive, autosquash, rebase_under)
+}
+
+struct ProjectStatusDisplayData {
+  location: String,
+  branch: String,
+  top_commit: String,
+  files: Vec<String>,
+}
+
+impl ProjectStatusDisplayData {
+  pub fn from_status(status: &tree::ProjectStatus) -> ProjectStatusDisplayData {
+    let ahead = if status.ahead != 0 {
+      Some(console::style(format!("↑{}", status.ahead)).green())
+    } else {
+      None
+    };
+
+    let behind = if status.behind != 0 {
+      Some(console::style(format!("↓{}", status.behind)).red())
+    } else {
+      None
+    };
+
+    let ahead_behind = match (ahead, behind) {
+      (Some(a), Some(b)) => format!(" [{} {}]", a, b),
+      (Some(a), None) => format!(" [{}]", a),
+      (None, Some(b)) => format!(" [{}]", b),
+      (None, None) => "".to_string(),
+    };
+
+    let branch = match &status.branch {
+      Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
+      None => console::style("no branch".to_string()).red(),
+    };
+
+    ProjectStatusDisplayData {
+      location: PROJECT_STYLE.apply_to(format!("project {}", status.name)).to_string(),
+      branch: format!("{}{}", branch, ahead_behind),
+      top_commit: status.commit_summary.clone().unwrap_or_default(),
+      files: status
+        .files
+        .iter()
+        .map(|file| {
+          let index = file.index.to_char().to_uppercase().to_string();
+          let worktree = file.worktree.to_char();
+          let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
+          if file.worktree != FileState::Unchanged {
+            line = line.red();
+          } else {
+            line = line.green();
+          }
+
+          line.to_string()
+        })
+        .collect(),
+    }
+  }
+}
+
+struct TreeStatusDisplayData {
+  projects: Vec<ProjectStatusDisplayData>,
+  max_project_length: usize,
+  max_branch_length: usize,
+}
+
+impl TreeStatusDisplayData {
+  pub fn from_results(results: Vec<&tree::ProjectStatus>) -> TreeStatusDisplayData {
+    let mut max_project_length = 0;
+    let mut max_branch_length = 0;
+
+    let mut projects = Vec::new();
+    for result in results {
+      if !TreeStatusDisplayData::should_report(&result) {
+        continue;
+      }
+
+      let project = ProjectStatusDisplayData::from_status(&result);
+
+      max_project_length = cmp::max(
+        max_project_length,
+        console::measure_text_width(project.location.as_str()),
+      );
+      max_branch_length = cmp::max(max_branch_length, console::measure_text_width(project.branch.as_str()));
+
+      projects.push(project);
+    }
+
+    TreeStatusDisplayData {
+      projects,
+      max_project_length,
+      max_branch_length,
+    }
+  }
+
+  pub fn should_report(status: &tree::ProjectStatus) -> bool {
+    return status.ahead != 0 || status.behind != 0 || !status.files.is_empty();
+  }
+}
+
+fn cmd_status(
+  config: &Config,
+  mut pool: &mut Pool,
+  tree: &Tree,
+  status_under: Option<Vec<&str>>,
+) -> Result<i32, Error> {
+  let results = tree.status(&config, &mut pool, status_under)?;
+  let mut dirty = false;
+
+  let column_padding = 4;
+  let display_data = TreeStatusDisplayData::from_results(results.successful.iter().map(|r| &r.result).collect());
+  for project in display_data.projects {
+    dirty = true;
+
+    let project_column = console::pad_str(
+      project.location.as_str(),
+      display_data.max_project_length + column_padding,
+      console::Alignment::Left,
+      None,
+    );
+    let branch_column = console::pad_str(
+      project.branch.as_str(),
+      display_data.max_branch_length + column_padding,
+      console::Alignment::Left,
+      None,
+    );
+    let summary = console::truncate_str(project.top_commit.as_str(), 53, "...");
+    println!("{}{}{}", project_column, branch_column, summary);
+
+    for line in &project.files {
+      println!("{}", line)
+    }
+  }
+
+  if !results.failed.is_empty() {
+    for error in results.failed {
+      eprintln!("{}: {}", error.name, error.result);
+    }
+    bail!("failed to git status");
+  }
+
+  if dirty {
+    Ok(1)
+  } else {
+    Ok(0)
+  }
 }
 
 fn cmd_forall(
@@ -681,70 +827,7 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let status_under = submatches.values_of("PATH").map(Iterator::collect);
-
-        let results = tree.status(&config, &mut pool, status_under)?;
-        let mut dirty = false;
-        for result in results.successful {
-          let project_name = &result.name;
-          let project_status = &result.result;
-
-          let ahead = if project_status.ahead != 0 {
-            Some(console::style(format!("↑{}", project_status.ahead)).green())
-          } else {
-            None
-          };
-
-          let behind = if project_status.behind != 0 {
-            Some(console::style(format!("↓{}", project_status.behind)).red())
-          } else {
-            None
-          };
-
-          if project_status.ahead == 0 && project_status.behind == 0 && project_status.files.is_empty() {
-            continue;
-          }
-
-          dirty = true;
-
-          let ahead_behind = match (ahead, behind) {
-            (Some(a), Some(b)) => format!(" [{} {}]", a, b),
-            (Some(a), None) => format!(" [{}]", a),
-            (None, Some(b)) => format!(" [{}]", b),
-            (None, None) => "".to_string(),
-          };
-          let project_line = PROJECT_STYLE.apply_to(format!("project {:64}", project_name));
-          let branch = match &project_status.branch {
-            Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
-            None => console::style("no branch".to_string()).red(),
-          };
-          println!("{}{}{}", project_line, branch, ahead_behind);
-
-          for file in &project_status.files {
-            let index = file.index.to_char().to_uppercase().to_string();
-            let worktree = file.worktree.to_char();
-            let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
-            if file.worktree != FileState::Unchanged {
-              line = line.red();
-            } else {
-              line = line.green();
-            }
-
-            println!("{}", line)
-          }
-        }
-
-        if !results.failed.is_empty() {
-          for error in results.failed {
-            eprintln!("{}: {}", error.name, error.result);
-          }
-          bail!("failed to git status");
-        }
-
-        if dirty {
-          Ok(1)
-        } else {
-          Ok(0)
-        }
+        cmd_status(&config, &mut pool, &tree, status_under)
       }
 
       ("manifest", Some(submatches)) => {
