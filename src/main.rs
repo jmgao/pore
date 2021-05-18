@@ -204,6 +204,7 @@ fn cmd_upload(
   branch_name_as_topic: bool,
   autosubmit: bool,
   presubmit_ready: bool,
+  ps_description: Option<&str>,
   dry_run: bool,
 ) -> Result<i32, Error> {
   tree.upload(
@@ -219,6 +220,7 @@ fn cmd_upload(
     branch_name_as_topic,
     autosubmit,
     presubmit_ready,
+    ps_description,
     dry_run,
   )
 }
@@ -559,6 +561,7 @@ fn main() {
       (@arg NO_AUTOSUBMIT: --("no-autosubmit") +multiple "do not enable autosubmit")
       (@arg PRESUBMIT: --presubmit +multiple "queue the change for presubmit")
       (@arg NO_PRESUBMIT: --("no-presubmit") +multiple "do not queue the change for presubmit")
+      (@arg PS_DESCRIPTION: -m --message +takes_value "description to set for the new patch set")
       (@arg DRY_RUN: --("dry-run") "don't upload; just show upload commands")
     )
     (@subcommand prune =>
@@ -803,6 +806,7 @@ fn main() {
           submatches.is_present("BRANCH_NAME_AS_TOPIC"),
           autosubmit.unwrap_or(config.autosubmit),
           presubmit.unwrap_or(config.presubmit),
+          submatches.value_of("PS_DESCRIPTION"),
           submatches.is_present("DRY_RUN"),
         )
       }

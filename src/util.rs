@@ -118,6 +118,7 @@ pub struct UploadOptions<'a> {
   pub presubmit_ready: bool,
   pub private: bool,
   pub wip: bool,
+  pub ps_description: Option<&'a str>,
 }
 
 pub fn make_push_command(
@@ -158,6 +159,10 @@ pub fn make_push_command(
 
   if let Some(t) = &options.topic {
     cmd.arg("-o").arg(format!("topic={}", t));
+  }
+
+  if let Some(m) = &options.ps_description {
+    cmd.arg("-o").arg(format!("m={}", m));
   }
 
   cmd.arg(remote).arg(ref_spec);
