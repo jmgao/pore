@@ -984,6 +984,7 @@ impl Tree {
     branch_name_as_topic: bool,
     autosubmit: bool,
     presubmit_ready: bool,
+    ps_description: Option<&str>,
     dry_run: bool,
   ) -> Result<i32, Error> {
     // TODO: Figure out how 0 (all projects) should work.
@@ -1069,6 +1070,7 @@ impl Tree {
           presubmit_ready,
           private,
           wip,
+          ps_description,
         },
       );
 
