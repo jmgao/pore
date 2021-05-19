@@ -36,6 +36,7 @@ pub struct Manifest {
   pub default: Option<Default>,
   pub manifest_server: Option<ManifestServer>,
   pub superproject: Option<SuperProject>,
+  pub contactinfo: Option<ContactInfo>,
   pub repo_hooks: Option<RepoHooks>,
 }
 
@@ -65,6 +66,11 @@ pub struct ManifestServer {
 pub struct SuperProject {
   pub name: String,
   pub remote: String,
+}
+
+#[derive(Debug)]
+pub struct ContactInfo {
+  pub bug_url: String,
 }
 
 #[derive(Default, Debug)]
