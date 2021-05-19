@@ -139,6 +139,7 @@ fn parse_manifest(
         b"default" => populate_option!(manifest.default, parse_default(&e, &reader)?),
         b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, &reader)?),
         b"superproject" => populate_option!(manifest.superproject, parse_superproject(&e, &reader)?),
+        b"contactinfo" => populate_option!(manifest.contactinfo, parse_contactinfo(&e, &reader)?),
         b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, &reader)?),
 
         _ => bail!(
@@ -325,7 +326,7 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
       b"name" => populate_option!(name, value),
       b"remote" => populate_option!(remote, value),
       key => eprintln!(
-        "warning: unexpected attribute in <manifest-server>: {}",
+        "warning: unexpected attribute in <superproject>: {}",
         std::str::from_utf8(key).unwrap_or("???")
       ),
     }
@@ -334,6 +335,24 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
   ensure!(name != None, "name not specified in <superproject>");
   ensure!(remote != None, "remote not specified in <superproject>");
   Ok(SuperProject { name: name.unwrap(), remote: remote.unwrap() })
+}
+
+fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<ContactInfo, Error> {
+  let mut bug_url = None;
+  for attribute in event.attributes() {
+    let attribute = attribute?;
+    let value = attribute.unescape_and_decode_value(&reader)?;
+    match attribute.key {
+      b"bugurl" => populate_option!(bug_url, value),
+      key => eprintln!(
+        "warning: unexpected attribute in <contactinfo>: {}",
+        std::str::from_utf8(key).unwrap_or("???")
+      ),
+    }
+  }
+
+  ensure!(bug_url != None, "bugurl not specified in <contactinfo>");
+  Ok(ContactInfo { bug_url: bug_url.unwrap() })
 }
 
 fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_children: bool) -> Result<Project, Error> {
