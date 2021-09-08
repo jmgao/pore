@@ -185,7 +185,7 @@ impl Manifest {
     config: &Config,
     tree_config: &TreeConfig,
     project: &Project,
-  ) -> Result<String, Error> {
+  ) -> Result<(String, &Remote), Error> {
     let project_remote_name = project.find_remote(self)?;
     let project_remote = self
       .remotes
@@ -194,17 +194,17 @@ impl Manifest {
 
     // repo allows the use of ".." to mean the URL from which the manifest was cloned.
     if project_remote.fetch == ".." {
-      return Ok(tree_config.remote.clone());
+      return Ok((tree_config.remote.clone(), project_remote));
     }
 
     let url = canonicalize_url(&project_remote.fetch);
     for remote in &config.remotes {
       if url == canonicalize_url(&remote.url) {
-        return Ok(remote.name.clone());
+        return Ok((remote.name.clone(), project_remote));
       }
       for other_url in remote.other_urls.as_deref().unwrap_or(&[]) {
         if url == canonicalize_url(other_url) {
-          return Ok(remote.name.clone());
+          return Ok((remote.name.clone(), project_remote));
         }
       }
     }
