@@ -172,7 +172,7 @@ fn cmd_sync(
 fn cmd_start(config: &Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  tree.start(&config, &depot, &remote_config, branch_name, &directory)
+  tree.start(&config, &depot, branch_name, &directory)
 }
 
 fn user_string_to_vec(users: Option<&str>) -> Vec<String> {

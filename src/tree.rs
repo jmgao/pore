@@ -917,9 +917,8 @@ impl Tree {
 
   pub fn start(
     &self,
-    _config: &Config,
+    config: &Config,
     _depot: &Depot,
-    remote_config: &RemoteConfig,
     branch_name: &str,
     directory: &Path,
   ) -> Result<i32, Error> {
@@ -948,14 +947,15 @@ impl Tree {
       .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
 
     let revision = project.find_revision(&manifest)?;
-    let object = util::parse_revision(&repo, &remote_config.name, &revision)?;
+    let (remote, _remote_config) = manifest.resolve_project_remote(config, &self.config, project)?;
+    let object = util::parse_revision(&repo, &remote, &revision)?;
     let commit = object.peel_to_commit().context("failed to peel object to commit")?;
 
     let mut branch = repo
       .branch(&branch_name, &commit, false)
       .context(format!("failed to create branch {}", branch_name))?;
     branch
-      .set_upstream(Some(&format!("{}/{}", remote_config.name, revision)))
+      .set_upstream(Some(&format!("{}/{}", remote, revision)))
       .context("failed to set branch upstream")?;
 
     repo.checkout_tree(&object, None)?;
@@ -1428,9 +1428,6 @@ impl Tree {
 
   pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
     let manifest = self.read_manifest().context("failed to read manifest")?;
-    let remote_config = config
-      .find_remote(&self.config.remote)
-      .context(format!("failed to find remote {}", self.config.remote))?;
     let projects = self
       .collect_manifest_projects(config, &manifest, under)
       .context("failed to collect manifest projects")?;
@@ -1471,7 +1468,6 @@ impl Tree {
 
     let mut job = Job::with_name("preupload");
 
-    let remote_config = Arc::new(remote_config);
     let hook_path = Arc::new(self.path.join(&hook_project_path).join("pre-upload.py"));
 
     struct PresubmitResult {
@@ -1480,7 +1476,6 @@ impl Tree {
     }
 
     for project in projects {
-      let remote_config = Arc::clone(&remote_config);
       let project_path = self.path.join(&project.project_path);
       let hook_path = Arc::clone(&hook_path);
 
@@ -1505,7 +1500,7 @@ impl Tree {
             .peel_to_commit()
             .context("failed to peel HEAD to commit")?;
 
-          let upstream_object = util::parse_revision(&repo, &remote_config.name, &project.revision)?;
+          let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
           let upstream_commit = upstream_object
             .peel_to_commit()
             .context("failed to peel upstream object to commit")?;
