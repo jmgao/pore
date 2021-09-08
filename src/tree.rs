@@ -499,11 +499,7 @@ impl Tree {
 
     let mut projects = Vec::new();
     for (project_path, project) in filtered_projects {
-      let remote = manifest.resolve_project_remote(config, &self.config, project)?;
-      let remote_config = manifest
-        .remotes
-        .get(&remote)
-        .ok_or_else(|| format_err!("failed to find remote '{}' in config", remote))?;
+      let (remote, remote_config) = manifest.resolve_project_remote(config, &self.config, project)?;
       let revision = project
         .revision
         .clone()
