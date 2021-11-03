@@ -464,7 +464,7 @@ impl Tree {
 
   fn collect_manifest_projects(
     &self,
-    config: &Config,
+    config: Arc<Config>,
     manifest: &Manifest,
     under: Option<Vec<&str>>,
   ) -> Result<Vec<ProjectInfo>, Error> {
@@ -499,7 +499,7 @@ impl Tree {
 
     let mut projects = Vec::new();
     for (project_path, project) in filtered_projects {
-      let (remote, remote_config) = manifest.resolve_project_remote(config, &self.config, project)?;
+      let (remote, remote_config) = manifest.resolve_project_remote(&config, &self.config, project)?;
       let revision = project
         .revision
         .clone()
@@ -521,7 +521,7 @@ impl Tree {
   fn sync_repos(
     &mut self,
     pool: &mut Pool,
-    config: &Config,
+    config: Arc<Config>,
     projects: Vec<ProjectInfo>,
     fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
@@ -768,7 +768,7 @@ impl Tree {
 
   pub fn sync(
     &mut self,
-    config: &Config,
+    config: Arc<Config>,
     mut pool: &mut Pool,
     sync_under: Option<Vec<&str>>,
     fetch_type: FetchType,
@@ -790,7 +790,7 @@ impl Tree {
 
       self.sync_repos(
         &mut pool,
-        config,
+        Arc::clone(&config),
         manifest,
         Some(FetchTarget::Upstream),
         checkout,
@@ -800,10 +800,10 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, sync_under.clone())?;
+    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone())?;
     self.sync_repos(
       &mut pool,
-      config,
+      Arc::clone(&config),
       projects,
       if fetch_type == FetchType::NoFetch {
         None
@@ -819,7 +819,7 @@ impl Tree {
 
   pub fn status(
     &self,
-    config: &Config,
+    config: Arc<Config>,
     pool: &mut Pool,
     status_under: Option<Vec<&str>>,
   ) -> Result<ExecutionResults<ProjectStatus, Error>, Error> {
@@ -915,7 +915,7 @@ impl Tree {
     Ok(pool.execute(job))
   }
 
-  pub fn start(&self, config: &Config, _depot: &Depot, branch_name: &str, directory: &Path) -> Result<i32, Error> {
+  pub fn start(&self, config: Arc<Config>, _depot: &Depot, branch_name: &str, directory: &Path) -> Result<i32, Error> {
     let flags = git2::RepositoryOpenFlags::empty();
     let repo = git2::Repository::open_ext(&directory, flags, &self.path).context("failed to find git repository")?;
 
@@ -941,7 +941,7 @@ impl Tree {
       .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
 
     let revision = project.find_revision(&manifest)?;
-    let (remote, _remote_config) = manifest.resolve_project_remote(config, &self.config, project)?;
+    let (remote, _remote_config) = manifest.resolve_project_remote(&config, &self.config, project)?;
     let object = util::parse_revision(&repo, &remote, &revision)?;
     let commit = object.peel_to_commit().context("failed to peel object to commit")?;
 
@@ -962,7 +962,7 @@ impl Tree {
 
   pub fn upload(
     &self,
-    config: &Config,
+    config: Arc<Config>,
     pool: &mut Pool,
     upload_under: Option<Vec<&str>>,
     current_branch: bool,
@@ -989,7 +989,7 @@ impl Tree {
     );
 
     if !no_verify {
-      let result = self.preupload(config, pool, upload_under.clone())?;
+      let result = self.preupload(Arc::clone(&config), pool, upload_under.clone())?;
       if result != 0 {
         bail!("preupload hooks failed");
       }
@@ -1002,7 +1002,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, upload_under)?;
+    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, upload_under)?;
     let mut uploads: Vec<UploadInfo> = Vec::new();
 
     for project in projects {
@@ -1110,13 +1110,13 @@ impl Tree {
 
   pub fn prune(
     &self,
-    config: &Config,
+    config: Arc<Config>,
     pool: &mut Pool,
     depot: &Depot,
     prune_under: Option<Vec<&str>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, prune_under)?;
+    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, prune_under)?;
 
     let mut job = Job::with_name("pruning");
     let tree_root = Arc::new(self.path.clone());
@@ -1207,7 +1207,7 @@ impl Tree {
 
   pub fn rebase(
     &self,
-    config: &Config,
+    config: Arc<Config>,
     pool: &mut Pool,
     interactive: bool,
     autosquash: bool,
@@ -1346,7 +1346,7 @@ impl Tree {
 
   pub fn forall(
     &self,
-    config: &Config,
+    config: Arc<Config>,
     pool: &mut Pool,
     forall_under: Option<Vec<&str>>,
     command: &str,
@@ -1420,7 +1420,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
+  pub fn preupload(&self, config: Arc<Config>, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
     let manifest = self.read_manifest().context("failed to read manifest")?;
     let projects = self
       .collect_manifest_projects(config, &manifest, under)
@@ -1576,7 +1576,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn generate_manifest(&self, config: &Config, pool: &mut Pool, output: Option<&str>) -> Result<i32, Error> {
+  pub fn generate_manifest(&self, config: Arc<Config>, pool: &mut Pool, output: Option<&str>) -> Result<i32, Error> {
     let status = self.status(config, pool, None)?;
     let mut bail = false;
     for failed in status.failed {
@@ -1618,7 +1618,7 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn find_deleted(&self, _config: &Config, _pool: &mut Pool) -> Result<i32, Error> {
+  pub fn find_deleted(&self, _config: Arc<Config>, _pool: &mut Pool) -> Result<i32, Error> {
     // First, find the repos in the tree.
     let mut it = WalkDir::new(&self.path).into_iter();
     let mut projects: HashSet<String> = HashSet::new();

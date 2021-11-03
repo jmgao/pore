@@ -41,6 +41,7 @@ use std::cmp;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use failure::Error;
 use failure::ResultExt;
@@ -96,7 +97,7 @@ fn parse_target(target: &str) -> Result<(String, Option<String>, Option<String>)
 }
 
 fn cmd_clone(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   target: &str,
   directory: Option<&str>,
@@ -138,7 +139,7 @@ fn cmd_clone(
   };
 
   tree.sync(
-    &config,
+    Arc::clone(&config),
     &mut pool,
     None,
     fetch_type,
@@ -149,7 +150,7 @@ fn cmd_clone(
 }
 
 fn cmd_sync(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &mut Tree,
   sync_under: Option<Vec<&str>>,
@@ -159,7 +160,7 @@ fn cmd_sync(
   fetch_tags: bool,
 ) -> Result<i32, Error> {
   tree.sync(
-    &config,
+    Arc::clone(&config),
     &mut pool,
     sync_under,
     fetch_type,
@@ -169,10 +170,10 @@ fn cmd_sync(
   )
 }
 
-fn cmd_start(config: &Config, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
+fn cmd_start(config: Arc<Config>, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
   let remote_config = config.find_remote(&tree.config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  tree.start(&config, &depot, branch_name, &directory)
+  tree.start(Arc::clone(&config), &depot, branch_name, &directory)
 }
 
 fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
@@ -191,7 +192,7 @@ fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
 }
 
 fn cmd_upload(
-  config: &Config,
+  config: Arc<Config>,
   pool: &mut Pool,
   tree: &mut Tree,
   upload_under: Option<Vec<&str>>,
@@ -226,7 +227,7 @@ fn cmd_upload(
 }
 
 fn cmd_prune(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &mut Tree,
   prune_under: Option<Vec<&str>>,
@@ -237,7 +238,7 @@ fn cmd_prune(
 }
 
 fn cmd_rebase(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &mut Tree,
   interactive: bool,
@@ -345,12 +346,12 @@ impl TreeStatusDisplayData {
 }
 
 fn cmd_status(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &Tree,
   status_under: Option<Vec<&str>>,
 ) -> Result<i32, Error> {
-  let results = tree.status(&config, &mut pool, status_under)?;
+  let results = tree.status(Arc::clone(&config), &mut pool, status_under)?;
   let mut dirty = false;
 
   let column_padding = 4;
@@ -393,7 +394,7 @@ fn cmd_status(
 }
 
 fn cmd_forall(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &mut Tree,
   forall_under: Option<Vec<&str>>,
@@ -403,7 +404,7 @@ fn cmd_forall(
 }
 
 fn cmd_preupload(
-  config: &Config,
+  config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &mut Tree,
   preupload_under: Option<Vec<&str>>,
@@ -411,7 +412,7 @@ fn cmd_preupload(
   tree.preupload(config, &mut pool, preupload_under)
 }
 
-fn cmd_find_deleted(config: &Config, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
+fn cmd_find_deleted(config: Arc<Config>, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
   tree.find_deleted(config, &mut pool)
 }
 
@@ -657,14 +658,14 @@ fn main() {
   };
 
   let config = match config::Config::from_path(&config_path) {
-    Ok(config) => config,
+    Ok(config) => Arc::new(config),
 
     Err(err) => {
       eprintln!(
         "warning: failed to read config file at {:?}, falling back to default config: {}",
         config_path, err,
       );
-      config::Config::default()
+      Arc::new(config::Config::default())
     }
   };
 
@@ -685,7 +686,7 @@ fn main() {
       ("init", Some(submatches)) => {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(
-          &config,
+          Arc::clone(&config),
           &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           Some("."),
@@ -697,7 +698,7 @@ fn main() {
       ("clone", Some(submatches)) => {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(
-          &config,
+          Arc::clone(&config),
           &mut pool,
           &submatches.value_of("TARGET").unwrap(),
           submatches.value_of("DIRECTORY"),
@@ -727,7 +728,7 @@ fn main() {
         };
 
         cmd_sync(
-          &config,
+          Arc::clone(&config),
           &mut pool,
           &mut tree,
           fetch_under,
@@ -764,7 +765,7 @@ fn main() {
         };
         let refs_only = submatches.is_present("REFS_ONLY");
         cmd_sync(
-          &config,
+          Arc::clone(&config),
           &mut pool,
           &mut tree,
           sync_under,
@@ -783,7 +784,7 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd.clone())?;
         let branch_name = submatches.value_of("BRANCH").unwrap();
-        cmd_start(&config, &mut tree, branch_name, &cwd)
+        cmd_start(Arc::clone(&config), &mut tree, branch_name, &cwd)
       }
 
       ("upload", Some(submatches)) => {
@@ -793,7 +794,7 @@ fn main() {
         let presubmit = get_overridable_option_value(&submatches, "PRESUBMIT", "NO_PRESUBMIT");
 
         cmd_upload(
-          &config,
+          Arc::clone(&config),
           &mut pool,
           &mut tree,
           submatches.values_of("PATH").map(Iterator::collect),
@@ -815,7 +816,7 @@ fn main() {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd)?;
         let prune_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_prune(&config, &mut pool, &mut tree, prune_under)
+        cmd_prune(Arc::clone(&config), &mut pool, &mut tree, prune_under)
       }
 
       ("rebase", Some(submatches)) => {
@@ -824,21 +825,28 @@ fn main() {
         let interactive = submatches.is_present("INTERACTIVE");
         let autosquash = submatches.is_present("AUTOSQUASH");
         let rebase_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_rebase(&config, &mut pool, &mut tree, interactive, autosquash, rebase_under)
+        cmd_rebase(
+          Arc::clone(&config),
+          &mut pool,
+          &mut tree,
+          interactive,
+          autosquash,
+          rebase_under,
+        )
       }
 
       ("status", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let status_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_status(&config, &mut pool, &tree, status_under)
+        cmd_status(Arc::clone(&config), &mut pool, &tree, status_under)
       }
 
       ("manifest", Some(submatches)) => {
         let output = submatches.value_of("OUTPUT");
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
-        tree.generate_manifest(&config, &mut pool, output)
+        tree.generate_manifest(Arc::clone(&config), &mut pool, output)
       }
 
       ("forall", Some(submatches)) => {
@@ -848,20 +856,20 @@ fn main() {
         let command = submatches
           .value_of("COMMAND")
           .ok_or_else(|| format_err!("no commands specified"))?;
-        cmd_forall(&config, &mut pool, &mut tree, forall_under, command)
+        cmd_forall(Arc::clone(&config), &mut pool, &mut tree, forall_under, command)
       }
 
       ("preupload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd)?;
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_preupload(&config, &mut pool, &mut tree, preupload_under)
+        cmd_preupload(Arc::clone(&config), &mut pool, &mut tree, preupload_under)
       }
 
       ("find-deleted", Some(_submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd)?;
-        cmd_find_deleted(&config, &mut pool, &mut tree)
+        cmd_find_deleted(Arc::clone(&config), &mut pool, &mut tree)
       }
 
       ("config", Some(_submatches)) => {
