@@ -25,7 +25,7 @@ use super::depot::Depot;
 use failure::Error;
 use failure::ResultExt;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
   #[serde(default = "default_autosubmit")]
   pub autosubmit: bool,
@@ -44,7 +44,7 @@ fn default_presubmit() -> bool {
   false
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteConfig {
   pub name: String,
   pub url: String,
@@ -67,7 +67,7 @@ fn default_manifest_file() -> String {
   "default.xml".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DepotConfig {
   pub path: String,
 }
@@ -108,10 +108,10 @@ impl Config {
     Ok(path.into_owned().into())
   }
 
-  pub fn find_remote(&self, remote_name: &str) -> Result<RemoteConfig, Error> {
+  pub fn find_remote(&self, remote_name: &str) -> Result<&RemoteConfig, Error> {
     for remote in &self.remotes {
       if remote.name == remote_name {
-        return Ok(remote.clone());
+        return Ok(remote);
       }
     }
 
