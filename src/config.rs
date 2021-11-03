@@ -24,6 +24,7 @@ use super::depot::Depot;
 
 use failure::Error;
 use failure::ResultExt;
+use regex::Regex;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -44,6 +45,17 @@ fn default_presubmit() -> bool {
   false
 }
 
+fn default_project_renames() -> Vec<ProjectRename> {
+  Vec::new()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectRename {
+  #[serde(with = "serde_regex")]
+  pub regex: Regex,
+  pub replacement: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RemoteConfig {
   pub name: String,
@@ -57,6 +69,9 @@ pub struct RemoteConfig {
 
   #[serde(default = "default_manifest_file")]
   pub default_manifest_file: String,
+
+  #[serde(default = "default_project_renames")]
+  pub project_renames: Vec<ProjectRename>,
 }
 
 fn default_branch() -> String {
@@ -85,6 +100,7 @@ impl Default for Config {
         depot: "android".into(),
         default_branch: default_branch(),
         default_manifest_file: default_manifest_file(),
+        project_renames: default_project_renames(),
       }],
       depots: btreemap! {
         "android".into() => DepotConfig {

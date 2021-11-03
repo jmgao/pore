@@ -1129,12 +1129,16 @@ impl Tree {
     for project in projects {
       let depot = Arc::clone(&depot);
       let tree_root = Arc::clone(&tree_root);
+      let config = Arc::clone(&config);
       job.add_task(project.project_path.clone(), move |_| -> Result<PruneResult, Error> {
         let path = tree_root.join(&project.project_path);
         let tree_repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
 
-        let obj_repo_path = depot.objects_mirror(project.project_name);
+        let remote_config = config
+          .find_remote(&project.remote)
+          .context(format!("failed to find remote {}", project.remote))?;
+        let obj_repo_path = depot.objects_mirror(&remote_config, project.project_name);
         let obj_repo = git2::Repository::open_bare(&obj_repo_path)
           .context(format!("failed to open object repository {:?}", obj_repo_path))?;
 
