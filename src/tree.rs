@@ -915,13 +915,7 @@ impl Tree {
     Ok(pool.execute(job))
   }
 
-  pub fn start(
-    &self,
-    config: &Config,
-    _depot: &Depot,
-    branch_name: &str,
-    directory: &Path,
-  ) -> Result<i32, Error> {
+  pub fn start(&self, config: &Config, _depot: &Depot, branch_name: &str, directory: &Path) -> Result<i32, Error> {
     let flags = git2::RepositoryOpenFlags::empty();
     let repo = git2::Repository::open_ext(&directory, flags, &self.path).context("failed to find git repository")?;
 

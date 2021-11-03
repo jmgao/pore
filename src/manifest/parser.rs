@@ -334,7 +334,10 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
 
   ensure!(name != None, "name not specified in <superproject>");
   ensure!(remote != None, "remote not specified in <superproject>");
-  Ok(SuperProject { name: name.unwrap(), remote: remote.unwrap() })
+  Ok(SuperProject {
+    name: name.unwrap(),
+    remote: remote.unwrap(),
+  })
 }
 
 fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<ContactInfo, Error> {
@@ -352,7 +355,9 @@ fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resul
   }
 
   ensure!(bug_url != None, "bugurl not specified in <contactinfo>");
-  Ok(ContactInfo { bug_url: bug_url.unwrap() })
+  Ok(ContactInfo {
+    bug_url: bug_url.unwrap(),
+  })
 }
 
 fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_children: bool) -> Result<Project, Error> {

@@ -56,7 +56,6 @@ fn symlink<T: AsRef<Path> + Debug, U: AsRef<Path> + Debug>(target: T, symlink_pa
   }
 }
 
-
 /// Create a symlink, or if it already exists, check that it points to the right place.
 pub fn create_symlink<T: AsRef<Path> + Debug, U: AsRef<Path> + Debug>(target: T, symlink_path: U) -> Result<(), Error> {
   let target = target.as_ref();
