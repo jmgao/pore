@@ -282,7 +282,7 @@ impl ProjectStatusDisplayData {
     };
 
     ProjectStatusDisplayData {
-      location: PROJECT_STYLE.apply_to(format!("project {}", status.name)).to_string(),
+      location: PROJECT_STYLE.apply_to(format!("project {}", status.path)).to_string(),
       branch: format!("{}{}", branch, ahead_behind),
       top_commit: status.commit_summary.clone().unwrap_or_default(),
       files: status

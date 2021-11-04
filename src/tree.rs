@@ -210,6 +210,7 @@ pub struct FileStatus {
 #[derive(Debug)]
 pub struct ProjectStatus {
   pub name: String,
+  pub path: String,
   pub branch: Option<String>,
   pub commit: git2::Oid,
   pub commit_summary: Option<String>,
@@ -923,6 +924,7 @@ impl Tree {
 
         Ok(ProjectStatus {
           name: project.project_name.clone(),
+          path: project.project_path.clone(),
           branch,
           commit: commit.id(),
           commit_summary: commit.summary().map_or(None, |s| Some(s.to_string())),
