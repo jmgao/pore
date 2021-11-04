@@ -399,8 +399,9 @@ fn cmd_forall(
   tree: &mut Tree,
   forall_under: Option<Vec<&str>>,
   command: &str,
+  repo_compat: bool,
 ) -> Result<i32, Error> {
-  tree.forall(config, &mut pool, forall_under, command)
+  tree.forall(config, &mut pool, forall_under, command, repo_compat)
 }
 
 fn cmd_preupload(
@@ -642,6 +643,7 @@ fn main() {
 
   set_trace_id();
 
+  let repo_compat = std::env::args().next() == Some("repo".into());
   let config_path = match matches.value_of("CONFIG") {
     Some(path) => {
       info!("using provided config path {:?}", path);
@@ -856,7 +858,14 @@ fn main() {
         let command = submatches
           .value_of("COMMAND")
           .ok_or_else(|| format_err!("no commands specified"))?;
-        cmd_forall(Arc::clone(&config), &mut pool, &mut tree, forall_under, command)
+        cmd_forall(
+          Arc::clone(&config),
+          &mut pool,
+          &mut tree,
+          forall_under,
+          command,
+          repo_compat,
+        )
       }
 
       ("preupload", Some(submatches)) => {

@@ -732,27 +732,36 @@ impl Tree {
     Ok(0)
   }
 
+  fn write_hook(&self, directory: &Path, filename: &str, contents: &str) -> Result<(), Error> {
+    let path = self.path.join(directory);
+    std::fs::create_dir_all(&path).context(format!("failed to create directory: {:?}", path))?;
+    let file_path = path.join(filename);
+    let mut file = std::fs::File::create(&file_path).context(format!("failed to open file at {:?}", file_path))?;
+    file
+      .write_all(contents.as_bytes())
+      .context(format!("failed to write hook at {:?}", file_path))?;
+
+    // Currently no std APIs for dealing with file permissions on Windows.
+    // Not running this on Windows probably isn't an issue since everything
+    // should be executable unless the code was checked out to a directory
+    // that prohibits it.
+    #[cfg(unix)]
+    {
+      let mut permissions = file.metadata()?.permissions();
+      permissions.set_mode(0o700);
+      file.set_permissions(permissions)?;
+    }
+
+    Ok(())
+  }
+
   pub fn update_hooks(&self) -> Result<(), Error> {
     // Just always do this, since it's cheap.
-    let hooks_dir = self.path.join(".pore").join("hooks");
-    std::fs::create_dir_all(&hooks_dir).context("failed to create hooks directory")?;
+    let hooks_dir = PathBuf::new().join(".pore").join("hooks");
     for (filename, contents) in hooks::hooks() {
-      let path = hooks_dir.join(filename);
-      let mut file = std::fs::File::create(&path).context(format!("failed to open hook at {:?}", path))?;
-      file
-        .write_all(contents.as_bytes())
-        .context(format!("failed to create hook at {:?}", path))?;
-      // Currently no std APIs for dealing with file permissions on Windows.
-      // Not running this on Windows probably isn't an issue since everything
-      // should be executable unless the code was checked out to a directory
-      // that prohibits it.
-      #[cfg(unix)]
-      {
-        let mut permissions = file.metadata()?.permissions();
-        permissions.set_mode(0o700);
-        file.set_permissions(permissions)?;
-      }
+      self.write_hook(hooks_dir.as_path(), filename, contents)?;
     }
+
     Ok(())
   }
 
@@ -762,6 +771,14 @@ impl Tree {
     // Create symlinks for manifests and manifest.xml.
     create_symlink("../.pore/manifest", self.path.join(".repo").join("manifests"))?;
     create_symlink("../.pore/manifest.xml", self.path.join(".repo").join("manifest.xml"))?;
+
+    // Write a script that forwards repo to pore.
+    let repo_bin_dir = PathBuf::new().join(".repo").join("repo");
+    self.write_hook(
+      repo_bin_dir.as_path(),
+      "repo",
+      "#!/bin/bash\nexec -a repo pore \"${@}\"\n",
+    )?;
 
     Ok(())
   }
@@ -785,8 +802,6 @@ impl Tree {
         revision: self.config.branch.clone(),
         file_ops: Vec::new(),
       }];
-
-      self.update_hooks()?;
 
       self.sync_repos(
         &mut pool,
@@ -814,6 +829,12 @@ impl Tree {
       sync_under == None,
       fetch_tags,
     )?;
+
+    if sync_under == None {
+      self.update_hooks()?;
+      self.ensure_repo_compat()?;
+    }
+
     Ok(0)
   }
 
@@ -1354,6 +1375,7 @@ impl Tree {
     pool: &mut Pool,
     forall_under: Option<Vec<&str>>,
     command: &str,
+    repo_compat: bool,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(config, &manifest, forall_under)?;
@@ -1400,16 +1422,20 @@ impl Tree {
     for result in results.successful {
       let project_name = result.name;
       let result = result.result;
-      if result.rc == 0 {
-        println!("{}", PROJECT_STYLE.apply_to(project_name));
-      } else {
-        println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
-        rc = result.rc;
+      if !repo_compat {
+        if result.rc == 0 {
+          println!("{}", PROJECT_STYLE.apply_to(project_name));
+        } else {
+          println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
+          rc = result.rc;
+        }
       }
       let lines = result.output.split(|&c| c == b'\n');
       for line in lines {
         let mut stdout = std::io::stdout();
-        stdout.write_all(b"  ")?;
+        if !repo_compat {
+          stdout.write_all(b"  ")?;
+        }
         stdout.write_all(line)?;
         stdout.write_all(b"\n")?;
       }
