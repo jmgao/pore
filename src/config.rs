@@ -26,16 +26,56 @@ use failure::Error;
 use failure::ResultExt;
 use regex::Regex;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
-  #[serde(default = "default_autosubmit")]
-  pub autosubmit: bool,
+const DEFAULT_CONFIG: &str = "\
+autosubmit = false
+presubmit = false
 
-  #[serde(default = "default_presubmit")]
-  pub presubmit: bool,
-  pub remotes: Vec<RemoteConfig>,
-  pub depots: BTreeMap<String, DepotConfig>,
-}
+[depots.android]
+# Path to store the depot.
+path = '~/.pore/android'
+
+[[remotes]]
+# The name of a remote: used in manifest config and in the actual git repos as the origin name.
+name = 'aosp'
+
+# Primary URL used to clone from this remote.
+url = 'https://android.googlesource.com/'
+
+# Other URLs that should be mapped onto this remote.
+other_urls = ['persistent-https://android.googlesource.com/']
+
+# Name of the depot in which objects from this remote should be stored.
+depot = 'android'
+
+# project_renames are used to map remotes with differing directory structures onto the same depot.
+# For example, if one remote had a repositories at woodly/{foo,bar,baz} and another had
+# doodly/{foo,bar,baz},the following could be used to store all objects at doodly/{foo,bar,baz}.
+#
+# [[remotes.project_renames]]
+# regex = '^woodly/'
+# replacement = 'doodly/'
+
+[[manifests]]
+# Name of the manifest: used in `pore clone MANIFEST[/BRANCH]`
+name = 'aosp'
+
+# Remote from which the manifest project is cloned.
+remote = 'aosp'
+
+# Name of the manifest project.
+project = 'platform/manifest'
+
+# Default branch to use when `pore clone`d without a specified branch.
+default_branch = 'master'
+
+# Default manifest file to use when `pore clone`d without a specified manifest file.
+default_manifest_file = 'default.xml'
+
+[[manifests]]
+name = 'kernel'
+remote = 'aosp'
+project = 'kernel/manifest'
+";
 
 fn default_autosubmit() -> bool {
   false
@@ -47,6 +87,27 @@ fn default_presubmit() -> bool {
 
 fn default_project_renames() -> Vec<ProjectRename> {
   Vec::new()
+}
+
+fn default_branch() -> String {
+  "master".into()
+}
+
+fn default_manifest_file() -> String {
+  "default.xml".into()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+  #[serde(default = "default_autosubmit")]
+  pub autosubmit: bool,
+
+  #[serde(default = "default_presubmit")]
+  pub presubmit: bool,
+
+  pub depots: BTreeMap<String, DepotConfig>,
+  pub remotes: Vec<RemoteConfig>,
+  pub manifests: Vec<ManifestConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,25 +122,24 @@ pub struct RemoteConfig {
   pub name: String,
   pub url: String,
   pub other_urls: Option<Vec<String>>,
-  pub manifest: String,
   pub depot: String,
+
+  #[serde(default = "default_project_renames")]
+  pub project_renames: Vec<ProjectRename>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ManifestConfig {
+  pub name: String,
+
+  pub remote: String,
+  pub project: String,
 
   #[serde(default = "default_branch")]
   pub default_branch: String,
 
   #[serde(default = "default_manifest_file")]
   pub default_manifest_file: String,
-
-  #[serde(default = "default_project_renames")]
-  pub project_renames: Vec<ProjectRename>,
-}
-
-fn default_branch() -> String {
-  "master".into()
-}
-
-fn default_manifest_file() -> String {
-  "default.xml".into()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -89,29 +149,15 @@ pub struct DepotConfig {
 
 impl Default for Config {
   fn default() -> Config {
-    Config {
-      autosubmit: default_autosubmit(),
-      presubmit: default_presubmit(),
-      remotes: vec![RemoteConfig {
-        name: "aosp".into(),
-        url: "https://android.googlesource.com/".into(),
-        other_urls: Some(vec!["persistent-https://android.googlesource.com/".into()]),
-        manifest: "platform/manifest".into(),
-        depot: "android".into(),
-        default_branch: default_branch(),
-        default_manifest_file: default_manifest_file(),
-        project_renames: default_project_renames(),
-      }],
-      depots: btreemap! {
-        "android".into() => DepotConfig {
-          path: "~/.pore/android".into(),
-        },
-      },
-    }
+    toml::from_str(DEFAULT_CONFIG).expect("failed to parse embedded config")
   }
 }
 
 impl Config {
+  pub fn default_string() -> &'static str {
+    DEFAULT_CONFIG
+  }
+
   pub fn from_path(path: &Path) -> Result<Config, Error> {
     let mut file = String::new();
     File::open(&path)?.read_to_string(&mut file)?;
@@ -124,6 +170,16 @@ impl Config {
     Ok(path.into_owned().into())
   }
 
+  pub fn find_depot(&self, depot: &str) -> Result<Depot, Error> {
+    let depot_config = self
+      .depots
+      .get(depot)
+      .ok_or_else(|| format_err!("unknown depot {}", depot))?;
+    let path = Config::expand_path(&depot_config.path).context(format!("failed to expand path for depot {}", depot))?;
+
+    Depot::new(depot.to_string(), path)
+  }
+
   pub fn find_remote(&self, remote_name: &str) -> Result<&RemoteConfig, Error> {
     for remote in &self.remotes {
       if remote.name == remote_name {
@@ -134,13 +190,13 @@ impl Config {
     Err(format_err!("unknown remote {}", remote_name))
   }
 
-  pub fn find_depot(&self, depot: &str) -> Result<Depot, Error> {
-    let depot_config = self
-      .depots
-      .get(depot)
-      .ok_or_else(|| format_err!("unknown depot {}", depot))?;
-    let path = Config::expand_path(&depot_config.path).context(format!("failed to expand path for depot {}", depot))?;
+  pub fn find_manifest(&self, manifest_name: &str) -> Result<&ManifestConfig, Error> {
+    for manifest in &self.manifests {
+      if manifest.name == manifest_name {
+        return Ok(manifest);
+      }
+    }
 
-    Depot::new(depot.to_string(), path)
+    Err(format_err!("unknown manifest {}", manifest_name))
   }
 }

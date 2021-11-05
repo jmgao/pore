@@ -34,9 +34,6 @@ extern crate serde_derive;
 #[macro_use]
 extern crate clap;
 
-#[macro_use]
-extern crate maplit;
-
 use std::cmp;
 use std::ffi::OsString;
 use std::io::Write;
@@ -104,11 +101,12 @@ fn cmd_clone(
   group_filters: Option<&str>,
   fetch: bool,
 ) -> Result<i32, Error> {
-  let (remote, branch, file) = parse_target(target)?;
-  let remote_config = config.find_remote(&remote)?;
+  let (manifest, branch, file) = parse_target(target)?;
+  let manifest_config = config.find_manifest(&manifest)?;
+  let remote_config = config.find_remote(&manifest_config.remote)?;
   let depot = config.find_depot(&remote_config.depot)?;
-  let branch = branch.as_ref().unwrap_or(&remote_config.default_branch);
-  let file = file.as_ref().unwrap_or(&remote_config.default_manifest_file);
+  let branch = branch.as_ref().unwrap_or(&manifest_config.default_branch);
+  let file = file.as_ref().unwrap_or(&manifest_config.default_manifest_file);
 
   let tree_root = PathBuf::from(directory.unwrap_or(&branch));
   if let Err(err) = std::fs::create_dir_all(&tree_root) {
@@ -130,7 +128,16 @@ fn cmd_clone(
     .unwrap_or_else(Vec::new);
 
   // TODO: Add locking?
-  let mut tree = Tree::construct(&depot, &tree_root, &remote_config, &branch, &file, group_filters, fetch)?;
+  let mut tree = Tree::construct(
+    &depot,
+    &tree_root,
+    &manifest_config,
+    &remote_config,
+    &branch,
+    &file,
+    group_filters,
+    fetch,
+  )?;
   let fetch_type = if fetch {
     // We just fetched the manifest.
     FetchType::FetchExceptManifest
@@ -487,7 +494,7 @@ fn main() {
     (@subcommand clone =>
       (about: "checkout a new tree into a new directory")
       (@arg TARGET: +required
-        "the target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]\n\
+        "the target to checkout in the format <MANIFEST>[/<BRANCH>[:MANIFEST_FILE]]\n\
          BRANCH defaults to master if unspecified"
       )
       (@arg DIRECTORY:
@@ -616,7 +623,8 @@ fn main() {
       )
     )
     (@subcommand config =>
-      (about: "prints the default configuration file")
+      (about: "prints the parsed configuration file")
+      (@arg DEFAULT: --default "print the default configuration")
     )
   );
 
@@ -881,8 +889,12 @@ fn main() {
         cmd_find_deleted(Arc::clone(&config), &mut pool, &mut tree)
       }
 
-      ("config", Some(_submatches)) => {
-        println!("{}", toml::to_string_pretty(&Config::default())?);
+      ("config", Some(submatches)) => {
+        if submatches.is_present("DEFAULT") {
+          println!("{}", Config::default_string());
+        } else {
+          println!("{}", toml::to_string_pretty(config.as_ref())?);
+        }
         Ok(0)
       }
 

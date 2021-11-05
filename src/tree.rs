@@ -31,7 +31,7 @@ use walkdir::WalkDir;
 use crate::util::*;
 use crate::*;
 
-use config::RemoteConfig;
+use config::{ManifestConfig, RemoteConfig};
 use depot::Depot;
 use manifest::FileOperation;
 
@@ -373,6 +373,7 @@ impl Tree {
   pub fn construct<T: Into<PathBuf>>(
     depot: &Depot,
     path: T,
+    manifest_config: &ManifestConfig,
     remote_config: &RemoteConfig,
     branch: &str,
     file: &str,
@@ -391,21 +392,22 @@ impl Tree {
     let manifest_file = PathBuf::from("manifest").join(file);
     create_symlink(manifest_file, pore_path.join("manifest.xml")).context("failed to create manifest symlink")?;
 
+    let manifest_project = &manifest_config.project;
     if fetch {
       depot.fetch_repo(
         &remote_config,
-        &remote_config.manifest,
+        manifest_project,
         Some(&[branch.to_string()]),
         false,
         None,
       )?;
     }
-    depot.clone_repo(&remote_config, &remote_config.manifest, &branch, &manifest_path)?;
+    depot.clone_repo(&remote_config, manifest_project, &branch, &manifest_path)?;
 
     let tree_config = TreeConfig {
       remote: remote_config.name.clone(),
       branch: branch.into(),
-      manifest: remote_config.manifest.clone(),
+      manifest: manifest_config.remote.clone(),
       tags: Vec::new(),
       projects: Vec::new(),
       group_filters: Some(group_filters),
