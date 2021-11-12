@@ -420,7 +420,37 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
           }
 
           b"annotation" => {
-            eprintln!("warning: unhandled <project> annotation");
+            let mut name: Option<String> = None;
+            let mut value: Option<String> = None;
+            for attribute in e.attributes() {
+              let attribute = attribute?;
+              let attrib_value = attribute.unescape_and_decode_value(reader)?;
+              match attribute.key {
+                b"name" => name = Some(attrib_value),
+                b"value" => value = Some(attrib_value),
+
+                x => {
+                  bail!(
+                    "unexpected attribute in <annotation>: {}",
+                    std::str::from_utf8(x).unwrap_or("???")
+                  );
+                }
+              }
+            }
+
+            match (name, value) {
+              (None, _) => {
+                eprintln!("<annotation> missing name");
+              }
+
+              (_, None) => {
+                eprintln!("<annotation> missing value");
+              }
+
+              (Some(name), Some(value)) => {
+                eprintln!("warning: unhandled <project> annotation: {} => {}", name, value);
+              }
+            }
           }
 
           _ => bail!(
