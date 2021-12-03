@@ -407,7 +407,7 @@ impl Tree {
     let tree_config = TreeConfig {
       remote: remote_config.name.clone(),
       branch: branch.into(),
-      manifest: manifest_config.remote.clone(),
+      manifest: manifest_config.project.clone(),
       tags: Vec::new(),
       projects: Vec::new(),
       group_filters: Some(group_filters),
