@@ -26,6 +26,7 @@ use std::sync::Arc;
 use chrono::prelude::*;
 use failure::Error;
 use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
+use url::Url;
 use walkdir::WalkDir;
 
 use crate::util::*;
@@ -571,6 +572,7 @@ impl Tree {
     checkout: CheckoutType,
     do_project_cleanup: bool,
     fetch_tags: bool,
+    ssh_masters: &mut HashMap<String, std::process::Child>,
   ) -> Result<i32, Error> {
     let config = Arc::new(config.clone());
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
@@ -586,6 +588,7 @@ impl Tree {
         project_name: String,
       }
       let mut fetch_projects = HashMap::<FetchProject, FetchTarget>::new();
+      let mut remote_names = HashSet::new();
 
       for project in &projects {
         let key = FetchProject {
@@ -597,6 +600,32 @@ impl Tree {
           .entry(key)
           .or_insert_with(|| FetchTarget::empty())
           .merge(&local_target);
+        remote_names.insert(project.remote.clone());
+      }
+
+      // Spawn an ssh ControlMaster to eliminate ssh startup latency.
+      for remote_name in remote_names {
+        let remote = match config.find_remote(&remote_name) {
+          Ok(x) => x,
+          Err(_) => continue,
+        };
+
+        if let Ok(parsed) = Url::parse(&remote.url) {
+          if parsed.scheme() != "ssh" {
+            continue;
+          }
+
+          if let Some(host) = parsed.host_str() {
+            ssh_masters.entry(host.into()).or_insert_with(|| {
+              let mut cmd = std::process::Command::new("ssh");
+              cmd.arg("-M");
+              cmd.arg("-N");
+              cmd.arg("-o").arg(format!("ControlPath {}", ssh_mux_path()));
+              cmd.arg(host);
+              cmd.spawn().expect("failed to start ssh ControlMaster")
+            });
+          }
+        }
       }
 
       for (project, target) in &fetch_projects {
@@ -858,6 +887,7 @@ impl Tree {
     checkout: CheckoutType,
     fetch_tags: bool,
   ) -> Result<i32, Error> {
+    let mut ssh_masters = HashMap::new();
     if fetch_type == FetchType::Fetch {
       // Sync the manifest repo first.
       let manifest = vec![ProjectInfo {
@@ -876,6 +906,7 @@ impl Tree {
         checkout,
         false,
         fetch_tags,
+        &mut ssh_masters,
       )?;
     }
 
@@ -893,11 +924,22 @@ impl Tree {
       checkout,
       sync_under == None,
       fetch_tags,
+      &mut ssh_masters,
     )?;
 
     if sync_under == None {
       self.update_hooks()?;
       self.ensure_repo_compat()?;
+    }
+
+    for (host, child) in ssh_masters.iter_mut() {
+      let mut cmd = std::process::Command::new("ssh");
+      cmd.arg("-o").arg("ControlMaster no");
+      cmd.arg("-o").arg(format!("ControlPath {}", ssh_mux_path()));
+      cmd.arg("-O").arg("exit");
+      cmd.arg(host);
+      cmd.output().expect("failed to stop ssh ControlMaster");
+      child.wait().expect("child exited with failure");
     }
 
     Ok(0)

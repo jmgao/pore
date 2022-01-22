@@ -190,3 +190,7 @@ pub fn read_line() -> Result<String, Error> {
   }
   Ok(line)
 }
+
+pub fn ssh_mux_path() -> String {
+  format!("~/.ssh/pore_sshmux_{}_%r@%h:%p", std::process::id())
+}

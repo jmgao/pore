@@ -179,6 +179,12 @@ impl Depot {
       }
     }
 
+    // If tree.rs spawned an ssh ControlMaster, use it.
+    cmd.env(
+      "GIT_SSH_COMMAND",
+      format!("ssh -o 'ControlMaster no' -o 'ControlPath {}'", util::ssh_mux_path()),
+    );
+
     let git_output = cmd.output().context("failed to spawn git fetch")?;
     if !git_output.status.success() {
       bail!("git fetch failed: {}", String::from_utf8_lossy(&git_output.stderr));
