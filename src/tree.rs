@@ -1470,6 +1470,7 @@ impl Tree {
           .env("PORE_ROOT", tree_root.as_os_str())
           .env("PORE_ROOT_REL", rel_to_root.as_os_str())
           .env("REPO_PROJECT", project.project_name)
+          .env("REPO_PATH", project.project_path)
           .current_dir(&path)
           .output()?;
 
