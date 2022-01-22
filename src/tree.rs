@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Deref;
@@ -52,16 +52,57 @@ pub enum FetchType {
   NoFetch,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum FetchTarget {
   /// Fetch whatever each project has specified as its upstream revision.
   Upstream,
 
   /// Fetch specific revisions for the project.
-  Specific(Vec<String>),
+  Specific(HashSet<String>),
 
   /// Fetch everything.
   All,
+}
+
+impl FetchTarget {
+  fn empty() -> FetchTarget {
+    FetchTarget::Specific(HashSet::new())
+  }
+
+  fn reify<T: Into<String>>(&self, upstream_rev: T) -> FetchTarget {
+    match self {
+      FetchTarget::Upstream => {
+        let mut set = HashSet::new();
+        set.insert(upstream_rev.into());
+        FetchTarget::Specific(set)
+      }
+
+      x => x.clone(),
+    }
+  }
+
+  fn merge(&mut self, other: &FetchTarget) {
+    if *self == FetchTarget::Upstream || *other == FetchTarget::Upstream {
+      panic!("unreified FetchTarget");
+    }
+
+    if *self == FetchTarget::All || *other == FetchTarget::All {
+      *self = FetchTarget::All;
+      return;
+    }
+
+    match self {
+      FetchTarget::Specific(ref mut lhs) => match other {
+        FetchTarget::Specific(ref rhs) => {
+          *lhs = lhs.union(rhs).cloned().collect();
+        }
+
+        _ => unreachable!(),
+      },
+
+      _ => unreachable!(),
+    }
+  }
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -537,29 +578,50 @@ impl Tree {
       let target: Arc<FetchTarget> = Arc::new(target);
 
       let mut job = Job::with_name("fetching");
-      for project in &projects {
-        let config = Arc::clone(&config);
-        let project_info = Arc::clone(&project);
-        let target = Arc::clone(&target);
 
-        job.add_task(project_info.project_path.clone(), move |_| -> Result<(), Error> {
+      // The same underlying repository might be checked out into multiple directories.
+      #[derive(PartialEq, Eq, Hash)]
+      struct FetchProject {
+        remote: String,
+        project_name: String,
+      }
+      let mut fetch_projects = HashMap::<FetchProject, FetchTarget>::new();
+
+      for project in &projects {
+        let key = FetchProject {
+          remote: project.remote.clone(),
+          project_name: project.project_name.clone(),
+        };
+        let local_target = target.clone().reify(&project.revision);
+        fetch_projects
+          .entry(key)
+          .or_insert_with(|| FetchTarget::empty())
+          .merge(&local_target);
+      }
+
+      for (project, target) in &fetch_projects {
+        let config = Arc::clone(&config);
+        let project_name = project.project_name.clone();
+        let remote_name = project.remote.clone();
+        let target = target.clone();
+
+        job.add_task(project_name.clone(), move |_| -> Result<(), Error> {
           let remote = config
-            .find_remote(&project_info.remote)
-            .context(format!("failed to find remote {}", project_info.remote))?;
+            .find_remote(&remote_name)
+            .context(format!("failed to find remote {}", remote_name))?;
           let depot = config
             .find_depot(&remote.depot)
-            .context(format!("failed to find depot for remote {}", project_info.remote))?;
+            .context(format!("failed to find depot for remote {}", remote_name))?;
 
-          let upstream = [project_info.revision.clone()];
-          let target = match target.deref() {
-            FetchTarget::Upstream => Some(&upstream[..]),
-            FetchTarget::Specific(targets) => Some(targets.as_slice()),
+          let target_vec: Option<Vec<String>> = match target {
+            FetchTarget::Upstream => panic!("unreified FetchTarget"),
+            FetchTarget::Specific(targets) => Some(targets.iter().cloned().collect()),
             FetchTarget::All => None,
           };
+          let target = target_vec.as_deref();
           depot
-            .fetch_repo(&remote, &project_info.project_name, target, fetch_tags, None)
-            .context(format!("failed to fetch for project {}", project_info.project_name,))?;
-
+            .fetch_repo(&remote, &project_name, target, fetch_tags, None)
+            .context(format!("failed to fetch for project {}", project_name,))?;
           Ok(())
         });
       }
