@@ -24,8 +24,8 @@ use super::util;
 
 #[derive(Clone, Debug)]
 pub struct Depot {
-  name: String,
-  path: PathBuf,
+  pub name: String,
+  pub path: PathBuf,
 }
 
 impl Depot {
