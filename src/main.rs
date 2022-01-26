@@ -37,7 +37,7 @@ extern crate clap;
 use std::cmp;
 use std::ffi::OsString;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use failure::Error;
@@ -154,105 +154,6 @@ fn cmd_clone(
     CheckoutType::Checkout,
     false,
   )
-}
-
-fn cmd_sync(
-  config: Arc<Config>,
-  mut pool: &mut Pool,
-  tree: &mut Tree,
-  sync_under: Option<Vec<&str>>,
-  fetch_type: FetchType,
-  fetch_target: FetchTarget,
-  checkout: CheckoutType,
-  fetch_tags: bool,
-) -> Result<i32, Error> {
-  tree.sync(
-    Arc::clone(&config),
-    &mut pool,
-    sync_under,
-    fetch_type,
-    fetch_target,
-    checkout,
-    fetch_tags,
-  )
-}
-
-fn cmd_start(config: Arc<Config>, tree: &mut Tree, branch_name: &str, directory: &Path) -> Result<i32, Error> {
-  let remote_config = config.find_remote(&tree.config.remote)?;
-  let depot = config.find_depot(&remote_config.depot)?;
-  tree.start(Arc::clone(&config), &depot, branch_name, &directory)
-}
-
-fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
-  users
-    .unwrap_or("")
-    .split(',')
-    .filter(|r| !r.is_empty())
-    .map(|r| {
-      if r.contains('@') {
-        r.to_string()
-      } else {
-        format!("{}@google.com", r)
-      }
-    })
-    .collect()
-}
-
-fn cmd_upload(
-  config: Arc<Config>,
-  pool: &mut Pool,
-  tree: &mut Tree,
-  upload_under: Option<Vec<&str>>,
-  current_branch: bool,
-  no_verify: bool,
-  reviewers: Option<&str>,
-  cc: Option<&str>,
-  private: bool,
-  wip: bool,
-  branch_name_as_topic: bool,
-  autosubmit: bool,
-  presubmit_ready: bool,
-  ps_description: Option<&str>,
-  dry_run: bool,
-) -> Result<i32, Error> {
-  tree.upload(
-    config,
-    pool,
-    upload_under,
-    current_branch,
-    no_verify,
-    &user_string_to_vec(reviewers),
-    &user_string_to_vec(cc),
-    private,
-    wip,
-    branch_name_as_topic,
-    autosubmit,
-    presubmit_ready,
-    ps_description,
-    dry_run,
-  )
-}
-
-fn cmd_prune(
-  config: Arc<Config>,
-  mut pool: &mut Pool,
-  tree: &mut Tree,
-  prune_under: Option<Vec<&str>>,
-) -> Result<i32, Error> {
-  let remote_config = config.find_remote(&tree.config.remote)?;
-  let depot = config.find_depot(&remote_config.depot)?;
-  tree.prune(config, &mut pool, &depot, prune_under)
-}
-
-fn cmd_rebase(
-  config: Arc<Config>,
-  mut pool: &mut Pool,
-  tree: &mut Tree,
-  interactive: bool,
-  autosquash: bool,
-  rebase_under: Option<Vec<&str>>,
-) -> Result<i32, Error> {
-  tree.rebase(config, &mut pool, interactive, autosquash, rebase_under)
 }
 
 struct ProjectStatusDisplayData {
@@ -398,30 +299,6 @@ fn cmd_status(
   } else {
     Ok(0)
   }
-}
-
-fn cmd_forall(
-  config: Arc<Config>,
-  mut pool: &mut Pool,
-  tree: &mut Tree,
-  forall_under: Option<Vec<&str>>,
-  command: &str,
-  repo_compat: bool,
-) -> Result<i32, Error> {
-  tree.forall(config, &mut pool, forall_under, command, repo_compat)
-}
-
-fn cmd_preupload(
-  config: Arc<Config>,
-  mut pool: &mut Pool,
-  tree: &mut Tree,
-  preupload_under: Option<Vec<&str>>,
-) -> Result<i32, Error> {
-  tree.preupload(config, &mut pool, preupload_under)
-}
-
-fn cmd_find_deleted(config: Arc<Config>, mut pool: &mut Pool, tree: &mut Tree) -> Result<i32, Error> {
-  tree.find_deleted(config, &mut pool)
 }
 
 fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, disabled_name: &str) -> Option<bool> {
@@ -737,10 +614,9 @@ fn main() {
           }
         };
 
-        cmd_sync(
+        tree.sync(
           Arc::clone(&config),
           &mut pool,
-          &mut tree,
           fetch_under,
           FetchType::Fetch,
           fetch_target,
@@ -774,10 +650,9 @@ fn main() {
           }
         };
         let refs_only = submatches.is_present("REFS_ONLY");
-        cmd_sync(
+        tree.sync(
           Arc::clone(&config),
           &mut pool,
-          &mut tree,
           sync_under,
           fetch_type,
           fetch_target,
@@ -792,26 +667,44 @@ fn main() {
 
       ("start", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd.clone())?;
+        let tree = Tree::find_from_path(cwd.clone())?;
         let branch_name = submatches.value_of("BRANCH").unwrap();
-        cmd_start(Arc::clone(&config), &mut tree, branch_name, &cwd)
+
+        let remote_config = config.find_remote(&tree.config.remote)?;
+        let depot = config.find_depot(&remote_config.depot)?;
+
+        tree.start(Arc::clone(&config), &depot, branch_name, &cwd)
       }
 
       ("upload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd)?;
+        let tree = Tree::find_from_path(cwd)?;
         let autosubmit = get_overridable_option_value(&submatches, "AUTOSUBMIT", "NO_AUTOSUBMIT");
         let presubmit = get_overridable_option_value(&submatches, "PRESUBMIT", "NO_PRESUBMIT");
 
-        cmd_upload(
+        fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
+          users
+            .unwrap_or("")
+            .split(',')
+            .filter(|r| !r.is_empty())
+            .map(|r| {
+              if r.contains('@') {
+                r.to_string()
+              } else {
+                format!("{}@google.com", r)
+              }
+            })
+            .collect()
+        }
+
+        tree.upload(
           Arc::clone(&config),
           &mut pool,
-          &mut tree,
           submatches.values_of("PATH").map(Iterator::collect),
           submatches.is_present("CURRENT_BRANCH"),
           submatches.is_present("NO_VERIFY"),
-          submatches.value_of("REVIEWERS"),
-          submatches.value_of("CC"),
+          &user_string_to_vec(submatches.value_of("REVIEWERS")),
+          &user_string_to_vec(submatches.value_of("CC")),
           submatches.is_present("PRIVATE"),
           submatches.is_present("WIP"),
           submatches.is_present("BRANCH_NAME_AS_TOPIC"),
@@ -824,25 +717,21 @@ fn main() {
 
       ("prune", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd)?;
+        let tree = Tree::find_from_path(cwd)?;
+        let remote_config = config.find_remote(&tree.config.remote)?;
+        let depot = config.find_depot(&remote_config.depot)?;
+
         let prune_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_prune(Arc::clone(&config), &mut pool, &mut tree, prune_under)
+        tree.prune(config, &mut pool, &depot, prune_under)
       }
 
       ("rebase", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd)?;
+        let tree = Tree::find_from_path(cwd)?;
         let interactive = submatches.is_present("INTERACTIVE");
         let autosquash = submatches.is_present("AUTOSQUASH");
         let rebase_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_rebase(
-          Arc::clone(&config),
-          &mut pool,
-          &mut tree,
-          interactive,
-          autosquash,
-          rebase_under,
-        )
+        tree.rebase(config, &mut pool, interactive, autosquash, rebase_under)
       }
 
       ("status", Some(submatches)) => {
@@ -861,32 +750,26 @@ fn main() {
 
       ("forall", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd)?;
+        let tree = Tree::find_from_path(cwd)?;
         let forall_under = submatches.values_of("PATH").map(Iterator::collect);
         let command = submatches
           .value_of("COMMAND")
           .ok_or_else(|| format_err!("no commands specified"))?;
-        cmd_forall(
-          Arc::clone(&config),
-          &mut pool,
-          &mut tree,
-          forall_under,
-          command,
-          repo_compat,
-        )
+
+        tree.forall(Arc::clone(&config), &mut pool, forall_under, command, repo_compat)
       }
 
       ("preupload", Some(submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd)?;
+        let tree = Tree::find_from_path(cwd)?;
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_preupload(Arc::clone(&config), &mut pool, &mut tree, preupload_under)
+        tree.preupload(config, &mut pool, preupload_under)
       }
 
       ("find-deleted", Some(_submatches)) => {
         let cwd = std::env::current_dir().context("failed to get current working directory")?;
-        let mut tree = Tree::find_from_path(cwd)?;
-        cmd_find_deleted(Arc::clone(&config), &mut pool, &mut tree)
+        let tree = Tree::find_from_path(cwd)?;
+        tree.find_deleted(config, &mut pool)
       }
 
       ("config", Some(submatches)) => {
