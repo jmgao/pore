@@ -121,26 +121,39 @@ pub enum GroupFilter {
 
 impl GroupFilter {
   fn filter_project(filters: &[GroupFilter], project: &manifest::Project) -> bool {
-    if filters.is_empty() {
-      return true;
-    }
-
     let groups = project.groups.as_deref().unwrap_or(&[]);
 
     let mut included = false;
     let mut excluded = false;
 
-    for filter in filters {
-      match filter {
-        GroupFilter::Include(group) => {
-          if groups.contains(group) {
-            included = true;
-          }
-        }
+    let allow_empty = if filters.is_empty() {
+      true
+    } else if filters.len() == 1 {
+      match &filters[0] {
+        GroupFilter::Include(x) => x == "default",
+        GroupFilter::Exclude(_) => false,
+      }
+    } else {
+      false
+    };
 
-        GroupFilter::Exclude(group) => {
-          if groups.contains(group) {
-            excluded = true;
+    if allow_empty {
+      included = !groups.iter().any(|x| x == "notdefault");
+    } else {
+      for filter in filters {
+        match filter {
+          GroupFilter::Include(group) => {
+            if groups.contains(group) {
+              included = true;
+            } else if group == "default" && groups.is_empty() {
+              included = true;
+            }
+          }
+
+          GroupFilter::Exclude(group) => {
+            if groups.contains(group) {
+              excluded = true;
+            }
           }
         }
       }
