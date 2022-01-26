@@ -471,7 +471,9 @@ fn main() {
         and with the following environment variables defined:
 
           $PORE_ROOT       absolute path of the root of the tree
-          $PORE_ROOT_REL   relative path from the project to the root of the tree"
+          $PORE_ROOT_REL   relative path from the project to the root of the tree
+          $REPO_PROJECT    name of the git repository in the remote
+          $REPO_PATH       relative path from the root of the tree to project"
       ))
       (@arg PATH: ...
          "path(s) beneath which to run commands\n\
