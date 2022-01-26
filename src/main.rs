@@ -527,6 +527,7 @@ fn main() {
       fatal!("failed to set working directory to {}: {}", cwd, err);
     }
   }
+  let cwd = std::env::current_dir().expect("failed to get current working directory");
 
   set_trace_id();
 
@@ -597,7 +598,6 @@ fn main() {
       }
 
       ("fetch", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd)?;
         let fetch_under = submatches.values_of("PATH").map(Iterator::collect);
 
@@ -633,7 +633,6 @@ fn main() {
         } else {
           FetchType::Fetch
         };
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let mut tree = Tree::find_from_path(cwd)?;
         let sync_under = submatches.values_of("PATH").map(Iterator::collect);
 
@@ -668,7 +667,6 @@ fn main() {
       }
 
       ("start", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd.clone())?;
         let branch_name = submatches.value_of("BRANCH").unwrap();
 
@@ -679,7 +677,6 @@ fn main() {
       }
 
       ("upload", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let autosubmit = get_overridable_option_value(&submatches, "AUTOSUBMIT", "NO_AUTOSUBMIT");
         let presubmit = get_overridable_option_value(&submatches, "PRESUBMIT", "NO_PRESUBMIT");
@@ -718,7 +715,6 @@ fn main() {
       }
 
       ("prune", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
@@ -728,7 +724,6 @@ fn main() {
       }
 
       ("rebase", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let interactive = submatches.is_present("INTERACTIVE");
         let autosquash = submatches.is_present("AUTOSQUASH");
@@ -737,7 +732,6 @@ fn main() {
       }
 
       ("status", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let status_under = submatches.values_of("PATH").map(Iterator::collect);
         cmd_status(Arc::clone(&config), &mut pool, &tree, status_under)
@@ -745,13 +739,11 @@ fn main() {
 
       ("manifest", Some(submatches)) => {
         let output = submatches.value_of("OUTPUT");
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         tree.generate_manifest(Arc::clone(&config), &mut pool, output)
       }
 
       ("forall", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let forall_under = submatches.values_of("PATH").map(Iterator::collect);
         let command = submatches
@@ -762,14 +754,12 @@ fn main() {
       }
 
       ("preupload", Some(submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
         tree.preupload(config, &mut pool, preupload_under)
       }
 
       ("find-deleted", Some(_submatches)) => {
-        let cwd = std::env::current_dir().context("failed to get current working directory")?;
         let tree = Tree::find_from_path(cwd)?;
         tree.find_deleted(config, &mut pool)
       }
