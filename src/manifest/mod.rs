@@ -87,6 +87,7 @@ pub struct Project {
   pub clone_depth: Option<u32>,
 
   pub file_operations: Vec<FileOperation>,
+  pub annotations: HashMap<String, String>,
 }
 
 impl Project {

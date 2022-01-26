@@ -448,7 +448,10 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
               }
 
               (Some(name), Some(value)) => {
-                eprintln!("warning: unhandled <project> annotation: {} => {}", name, value);
+                if project.annotations.contains_key(&name) {
+                  bail!("duplicate <annotation>: {}", name);
+                }
+                project.annotations.insert(name, value);
               }
             }
           }
