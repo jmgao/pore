@@ -1770,6 +1770,15 @@ impl Tree {
     Ok(0)
   }
 
+  pub fn list(&self, config: Arc<Config>) -> Result<i32, Error> {
+    let manifest = self.read_manifest()?;
+    let projects = self.collect_manifest_projects(config, &manifest, None)?;
+    for project in projects {
+      println!("{} : {}", project.project_path, project.project_name);
+    }
+    Ok(0)
+  }
+
   pub fn find_deleted(&self, _config: Arc<Config>, _pool: &mut Pool) -> Result<i32, Error> {
     // First, find the repos in the tree.
     let mut it = WalkDir::new(&self.path).into_iter();

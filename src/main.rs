@@ -490,6 +490,9 @@ fn main() {
           defaults to all repositories in the tree if unspecified"
       )
     )
+    (@subcommand list =>
+      (about: "list repositories")
+    )
     (@subcommand find_deleted =>
       (name: "find-deleted")
       (about: "find projects that were removed from the manifest")
@@ -757,6 +760,11 @@ fn main() {
         let tree = Tree::find_from_path(cwd)?;
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
         tree.preupload(config, &mut pool, preupload_under)
+      }
+
+      ("list", Some(_submatches)) => {
+        let tree = Tree::find_from_path(cwd)?;
+        tree.list(config)
       }
 
       ("find-deleted", Some(_submatches)) => {
