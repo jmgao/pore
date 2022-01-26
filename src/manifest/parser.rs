@@ -255,6 +255,11 @@ fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Rem
       b"fetch" => populate_option!(fetch, value),
       b"review" => populate_option!(remote.review, value),
       b"revision" => populate_option!(remote.revision, value),
+
+      // Ignored: pore doesn't support direct pushing (yet?)
+      b"push" => (),
+      b"pushurl" => (),
+
       key => eprintln!(
         "warning: unexpected attribute in <remote>: {}",
         std::str::from_utf8(key).unwrap_or("???")
