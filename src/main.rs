@@ -497,7 +497,6 @@ fn main() {
       (name: "find-deleted")
       (about: "find projects that were removed from the manifest")
     )
-
     (@subcommand manifest =>
       (about: "generate a manifest corresponding to the current state of the tree")
       (@arg OUTPUT: -o --output +takes_value value_name("FILE")

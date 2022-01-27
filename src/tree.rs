@@ -123,10 +123,11 @@ impl GroupFilter {
   fn filter_project(filters: &[GroupFilter], project: &manifest::Project) -> bool {
     let groups = project.groups.as_deref().unwrap_or(&[]);
 
-    let default = filters.is_empty() || filters.iter().any(|x| match x {
-      GroupFilter::Include(group) => group == "default",
-      GroupFilter::Exclude(_) => false,
-    });
+    let default = filters.is_empty()
+      || filters.iter().any(|x| match x {
+        GroupFilter::Include(group) => group == "default",
+        GroupFilter::Exclude(_) => false,
+      });
 
     let mut included = default && !groups.iter().any(|x| x == "notdefault");
     let mut excluded = false;
