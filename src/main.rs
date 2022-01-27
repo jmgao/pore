@@ -35,14 +35,16 @@ extern crate serde_derive;
 extern crate clap;
 
 use std::cmp;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::io::Write;
-use std::path::PathBuf;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use failure::Error;
 use failure::ResultExt;
-use progpool::Pool;
+use progpool::{Job, Pool};
 
 #[macro_export]
 macro_rules! fatal {
@@ -62,6 +64,7 @@ mod tree;
 mod util;
 
 use config::Config;
+use depot::Depot;
 use manifest::Manifest;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
 
@@ -301,6 +304,108 @@ fn cmd_status(
   }
 }
 
+fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<&str>, copy: bool) -> Result<i32, Error> {
+  let target_path = target_path.unwrap_or(".");
+  let target_metadata = std::fs::metadata(target_path)?;
+
+  // Make sure that we're actually in a repo tree.
+  let target_path = Path::new(target_path);
+  let manifest_dir = target_path.join(".repo").join("manifests");
+  let manifest_path = target_path.join(".repo").join("manifest.xml");
+
+  let manifest = Manifest::parse(&manifest_dir, &manifest_path)?;
+  let manifest_default = manifest.default.expect("manifest missing <default>");
+  let manifest_default_remote = manifest_default.remote.expect("manifest <default> missing remote");
+
+  let mut remote_projects: HashMap<String, HashSet<String>> = HashMap::new();
+  for (_, project) in manifest.projects {
+    let name = project.name;
+    let remote = project.remote.unwrap_or(manifest_default_remote.clone());
+    remote_projects.entry(remote).or_default().insert(name);
+  }
+
+  let mut job = Job::with_name("import");
+  for (remote, projects) in remote_projects {
+    let remote_config = config.find_remote(&remote)?;
+    let depot = config.find_depot(&remote_config.depot)?;
+    std::fs::create_dir_all(&depot.path).context("failed to create depot directory")?;
+    let depot_metadata = std::fs::metadata(&depot.path)?;
+
+    if !copy && depot_metadata.dev() != target_metadata.dev() {
+      bail!(
+        "Depot ({:?}) and target ({:?}) appear to be on different filesystems.\n       \
+             Either move the depot to the same filesystem, or use --copy to copy instead.",
+        &depot.path,
+        target_path
+      );
+    }
+
+    let depot = Arc::new(depot);
+
+    for project in projects {
+      let depot = Arc::clone(&depot);
+
+      let src_path = target_path
+        .join(".repo")
+        .join("project-objects")
+        .join(project.clone() + ".git");
+      let depot_path = depot.objects_mirror(remote_config, Depot::apply_project_renames(remote_config, &project));
+
+      if !src_path.is_dir() {
+        eprintln!("Skipping missing project: {}", project);
+        continue;
+      }
+
+      job.add_task(project.clone(), move |_| -> Result<(), Error> {
+        if !depot_path.is_dir() {
+          // Create a new repository in its location.
+          git2::Repository::init_bare(&depot_path).context("failed to create git repository")?;
+        }
+
+        // Copy the objects over.
+        let depot_object_path = depot_path.join("objects");
+        let src_objects_path = src_path.join("objects");
+        let src_object_dirs = std::fs::read_dir(src_objects_path).context("failed to read repository object dir")?;
+        for dir in src_object_dirs {
+          let dir = dir.context("failed to stat object dir")?;
+          if dir.file_name() == "info" {
+            // We don't want to copy objects/info over: it doesn't contain anything we want,
+            // and it might have weird stuff like alternates.
+            continue;
+          }
+
+          let depot_dir = depot_object_path.join(dir.file_name());
+          std::fs::create_dir_all(&depot_dir)?;
+
+          let src_objects = std::fs::read_dir(dir.path()).context("failed to read repository objects")?;
+          for file in src_objects {
+            let file = file.context("failed to stat object")?;
+            let target_path = depot_dir.join(file.file_name());
+
+            if copy {
+              std::fs::copy(file.path(), target_path)?;
+            } else {
+              std::fs::hard_link(file.path(), target_path)?;
+            }
+          }
+        }
+
+        Ok(())
+      });
+    }
+  }
+
+  let result = pool.execute(job);
+  if !result.failed.is_empty() {
+    for failure in result.failed {
+      eprintln!("{}: {:?}", failure.name, failure.result);
+    }
+    bail!("failed to import");
+  }
+
+  Ok(0)
+}
+
 fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, disabled_name: &str) -> Option<bool> {
   let last_enabled_index = matches.indices_of(enabled_name).map(Iterator::max);
   let last_disabled_index = matches.indices_of(disabled_name).map(Iterator::max);
@@ -488,6 +593,14 @@ fn main() {
       (@arg PATH: ...
          "path(s) beneath which to run preupload hooks\n\
           defaults to all repositories in the tree if unspecified"
+      )
+    )
+    (@subcommand import =>
+      (about: "import an existing repo tree into a depot")
+      (@arg COPY: -c --copy "copy objects instead of hard-linking")
+      (@arg DIRECTORY:
+        "the repo mirror to import from.\n\
+         defaults to the current working directory if unspecified"
       )
     )
     (@subcommand list =>
@@ -760,6 +873,13 @@ fn main() {
         let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
         tree.preupload(config, &mut pool, preupload_under)
       }
+
+      ("import", Some(submatches)) => cmd_import(
+        config,
+        &mut pool,
+        submatches.value_of("DIRECTORY"),
+        submatches.is_present("COPY"),
+      ),
 
       ("list", Some(_submatches)) => {
         let tree = Tree::find_from_path(cwd)?;
