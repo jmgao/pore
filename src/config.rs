@@ -48,7 +48,7 @@ other_urls = ['persistent-https://android.googlesource.com/']
 depot = 'android'
 
 # project_renames are used to map remotes with differing directory structures onto the same depot.
-# For example, if one remote had a repositories at woodly/{foo,bar,baz} and another had
+# For example, if one remote had repositories at woodly/{foo,bar,baz} and another had
 # doodly/{foo,bar,baz},the following could be used to store all objects at doodly/{foo,bar,baz}.
 #
 # [[remotes.project_renames]]
