@@ -370,9 +370,14 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let mut value = attribute.unescape_and_decode_value(&reader)?;
     match attribute.key {
-      b"name" => populate_option!(name, value),
+      b"name" => {
+        while value.ends_with('/') {
+          value.pop();
+        }
+        populate_option!(name, value)
+      },
       b"path" => populate_option!(project.path, value),
       b"remote" => populate_option!(project.remote, value),
       b"revision" => populate_option!(project.revision, value),
