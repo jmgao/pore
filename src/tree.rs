@@ -881,7 +881,7 @@ impl Tree {
   pub fn sync(
     &mut self,
     config: Arc<Config>,
-    mut pool: &mut Pool,
+    pool: &mut Pool,
     sync_under: Option<Vec<&str>>,
     fetch_type: FetchType,
     fetch_target: FetchTarget,
@@ -889,6 +889,39 @@ impl Tree {
     fetch_tags: bool,
   ) -> Result<i32, Error> {
     let mut ssh_masters = HashMap::new();
+    let result = self.sync_impl(
+      config,
+      pool,
+      sync_under,
+      fetch_type,
+      fetch_target,
+      checkout,
+      fetch_tags,
+      &mut ssh_masters,
+    );
+    for (host, child) in ssh_masters.iter_mut() {
+      let mut cmd = std::process::Command::new("ssh");
+      cmd.arg("-o").arg("ControlMaster no");
+      cmd.arg("-o").arg(format!("ControlPath {}", ssh_mux_path()));
+      cmd.arg("-O").arg("exit");
+      cmd.arg(host);
+      cmd.output().expect("failed to stop ssh ControlMaster");
+      child.wait().expect("child exited with failure");
+    }
+    result
+  }
+
+  fn sync_impl(
+    &mut self,
+    config: Arc<Config>,
+    mut pool: &mut Pool,
+    sync_under: Option<Vec<&str>>,
+    fetch_type: FetchType,
+    fetch_target: FetchTarget,
+    checkout: CheckoutType,
+    fetch_tags: bool,
+    mut ssh_masters: &mut HashMap<String, std::process::Child>,
+  ) -> Result<i32, Error> {
     if fetch_type == FetchType::Fetch {
       // Sync the manifest repo first.
       let manifest = vec![ProjectInfo {
@@ -931,16 +964,6 @@ impl Tree {
     if sync_under == None {
       self.update_hooks()?;
       self.ensure_repo_compat()?;
-    }
-
-    for (host, child) in ssh_masters.iter_mut() {
-      let mut cmd = std::process::Command::new("ssh");
-      cmd.arg("-o").arg("ControlMaster no");
-      cmd.arg("-o").arg(format!("ControlPath {}", ssh_mux_path()));
-      cmd.arg("-O").arg("exit");
-      cmd.arg(host);
-      cmd.output().expect("failed to stop ssh ControlMaster");
-      child.wait().expect("child exited with failure");
     }
 
     Ok(0)
