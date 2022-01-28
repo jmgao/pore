@@ -15,6 +15,7 @@
  */
 
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -49,7 +50,7 @@ depot = 'android'
 
 # project_renames are used to map remotes with differing directory structures onto the same depot.
 # For example, if one remote had repositories at woodly/{foo,bar,baz} and another had
-# doodly/{foo,bar,baz},the following could be used to store all objects at doodly/{foo,bar,baz}.
+# doodly/{foo,bar,baz}, the following could be used to store all objects at doodly/{foo,bar,baz}.
 #
 # [[remotes.project_renames]]
 # regex = '^woodly/'
@@ -75,6 +76,12 @@ default_manifest_file = 'default.xml'
 name = 'kernel'
 remote = 'aosp'
 project = 'kernel/manifest'
+
+[parallelism]
+# Override the parallelism used for commands.
+# 0 is interpreted as $(nproc), and negative values as the lesser of $(nproc) and the value
+global = 0
+status = -16
 ";
 
 fn default_update_check() -> bool {
@@ -101,6 +108,12 @@ fn default_manifest_file() -> String {
   "default.xml".into()
 }
 
+fn default_parallelism() -> HashMap<String, i32> {
+  let mut result = HashMap::new();
+  result.insert("status".into(), -16);
+  result
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
   #[serde(default = "default_update_check")]
@@ -115,6 +128,9 @@ pub struct Config {
   pub depots: BTreeMap<String, DepotConfig>,
   pub remotes: Vec<RemoteConfig>,
   pub manifests: Vec<ManifestConfig>,
+
+  #[serde(default = "default_parallelism")]
+  pub parallelism: HashMap<String, i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

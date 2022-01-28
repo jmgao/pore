@@ -45,6 +45,7 @@ reqwest = { version = "0.11.9", features = ["blocking"] }
 version-compare = "0.1.0"
 
 console = "0.15.0"
+num_cpus = "1.13.1"
 progpool = "0.2"
 
 tracing_facade = "0.1"

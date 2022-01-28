@@ -675,17 +675,30 @@ fn main() {
     }
   };
 
-  let mut pool = match matches.value_of("JOBS") {
-    Some(jobs) => {
-      if let Ok(jobs) = jobs.parse::<usize>() {
-        Pool::with_size(jobs)
-      } else {
-        fatal!("failed to parse jobs value: {}", jobs);
-      }
+  let cmd = matches.subcommand();
+  let pool_size = matches.value_of("JOBS").map(|job_str| {
+    if let Ok(jobs) = job_str.parse::<i32>() {
+      jobs
+    } else {
+      fatal!("failed to parse jobs value: {}", job_str);
     }
+  }).or_else(|| {
+    // Command-specific override
+    config.parallelism.get(cmd.0).cloned().or_else(|| {
+      // Global override
+      config.parallelism.get("global").cloned()
+    })
+  }).unwrap_or(0);
 
-    None => Pool::with_default_size(),
+  let num_cpus = num_cpus::get();
+  let pool_size = if pool_size == 0 {
+    num_cpus
+  } else if pool_size < 0 {
+    std::cmp::min(num_cpus, (-pool_size) as usize)
+  } else {
+    pool_size as usize
   };
+  let mut pool = Pool::with_size(pool_size);
 
   let update_checker = if config.update_check && isatty::stdout_isatty() {
     Some(UpdateChecker::fetch())
@@ -694,7 +707,7 @@ fn main() {
   };
 
   let result = || -> Result<i32, Error> {
-    match matches.subcommand() {
+    match cmd {
       ("init", Some(submatches)) => {
         let fetch = !submatches.is_present("LOCAL");
         cmd_clone(

@@ -863,6 +863,7 @@ dependencies = [
  "log",
  "maplit",
  "minidom",
+ "num_cpus",
  "pathdiff",
  "progpool",
  "quick-xml",

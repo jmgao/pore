@@ -2,7 +2,9 @@
 versions:
 - number: unreleased
   date: ""
-  changes: []
+  changes:
+  - Add configuration of parallelism, including for specific commands.
+  - Reduce the default parallelism of status to increase performance.
 - number: 0.1.0
   date: "2022-01-27"
   changes:
