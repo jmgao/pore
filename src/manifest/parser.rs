@@ -1,6 +1,6 @@
 use std::io::BufRead;
 
-use failure::{Error, ResultExt};
+use anyhow::{Context, Error};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 

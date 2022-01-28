@@ -23,7 +23,7 @@ extern crate lazy_static;
 extern crate log;
 
 #[macro_use]
-extern crate failure;
+extern crate anyhow;
 
 #[macro_use]
 extern crate indoc;
@@ -42,8 +42,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use failure::Error;
-use failure::ResultExt;
+use anyhow::{Context, Error};
 use progpool::{Job, Pool};
 
 #[macro_export]
@@ -909,13 +908,7 @@ fn main() {
   match result {
     Ok(rc) => std::process::exit(rc),
     Err(err) => {
-      let fail = err.as_fail();
-      if let Some(cause) = fail.cause() {
-        let root = cause.find_root_cause();
-        writeln!(&mut ::std::io::stderr(), "fatal: {}: {}", fail, root).unwrap();
-      } else {
-        writeln!(&mut ::std::io::stderr(), "fatal: {}", fail).unwrap();
-      }
+      writeln!(&mut ::std::io::stderr(), "fatal: {:#}", err).unwrap();
     }
   }
 }

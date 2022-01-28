@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use failure::{Error, ResultExt};
+use anyhow::{Context, Error};
 
 mod parser;
 mod serializer;

@@ -18,7 +18,7 @@ use std::fmt::Debug;
 use std::io;
 use std::path::Path;
 
-use failure::{Error, ResultExt};
+use anyhow::{Context, Error};
 
 pub fn assert_empty_directory<T: AsRef<Path> + Debug>(directory_path: T) -> Result<(), Error> {
   match std::fs::read_dir(&directory_path) {

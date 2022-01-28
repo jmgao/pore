@@ -22,8 +22,7 @@ use std::path::PathBuf;
 
 use super::depot::Depot;
 
-use failure::Error;
-use failure::ResultExt;
+use anyhow::{Context, Error};
 use regex::Regex;
 
 const DEFAULT_CONFIG: &str = "\

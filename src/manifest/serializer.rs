@@ -1,7 +1,7 @@
 use super::{FileOperation, Manifest};
 use std::io::Write;
 
-use failure::{Error, ResultExt};
+use anyhow::{Context, Error};
 
 use minidom::element::Element;
 use quick_xml::Writer;

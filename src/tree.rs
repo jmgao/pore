@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::prelude::*;
-use failure::Error;
+use anyhow::{Context, Error};
 use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
 use url::Url;
 use walkdir::WalkDir;

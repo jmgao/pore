@@ -16,8 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
-use failure::Error;
-use failure::ResultExt;
+use anyhow::{Context, Error};
 
 use super::config;
 use super::util;
