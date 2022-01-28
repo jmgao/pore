@@ -687,7 +687,7 @@ fn main() {
     None => Pool::with_default_size(),
   };
 
-  let update_checker = if config.update_check {
+  let update_checker = if config.update_check && isatty::stdout_isatty() {
     Some(UpdateChecker::fetch())
   } else {
     None
