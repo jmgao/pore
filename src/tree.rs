@@ -23,8 +23,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chrono::prelude::*;
 use anyhow::{Context, Error};
+use chrono::prelude::*;
 use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
 use url::Url;
 use walkdir::WalkDir;

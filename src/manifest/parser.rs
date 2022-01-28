@@ -377,7 +377,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
           value.pop();
         }
         populate_option!(name, value)
-      },
+      }
       b"path" => populate_option!(project.path, value),
       b"remote" => populate_option!(project.remote, value),
       b"revision" => populate_option!(project.revision, value),
