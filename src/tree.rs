@@ -219,6 +219,7 @@ struct ProjectInfo {
   remote: String,
   revision: String,
   file_ops: Vec<manifest::FileOperation>,
+  manifest_project: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -560,6 +561,7 @@ impl Tree {
         remote,
         revision,
         file_ops: project.file_operations.clone(),
+        manifest_project: false,
       });
     }
     Ok(projects)
@@ -738,6 +740,27 @@ impl Tree {
               }
             } else {
               depot.clone_repo(&remote, &project_name, &revision, &project_path)?;
+            }
+
+            if project_info.manifest_project {
+              // Some tools look at the upstream tracking branch of .repo/manifest to determine
+              // what manifest branch is being used.
+              // TODO: repo uses origin as the upstream, regardless of what the remote is called.
+              let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
+              let head = repo
+                .head()
+                .context("failed to get HEAD")?
+                .peel_to_commit()
+                .context("failed to peel HEAD to commit")?;
+              let mut branch = repo
+                .branch("default", &head, true)
+                .context("failed to create manifest default branch")?;
+              branch
+                .set_upstream(Some(&format!("origin/{}", project_info.revision)))
+                .context("failed to set manifest branch upstream")?;
+              repo
+                .set_head("refs/heads/default")
+                .context("failed to set manifest HEAD")?;
             }
 
             // Set up symlinks to repo hooks.
@@ -931,6 +954,7 @@ impl Tree {
         remote: self.config.remote.clone(),
         revision: self.config.branch.clone(),
         file_ops: Vec::new(),
+        manifest_project: true,
       }];
 
       self.sync_repos(
