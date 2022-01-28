@@ -26,6 +26,7 @@ use anyhow::{Context, Error};
 use regex::Regex;
 
 const DEFAULT_CONFIG: &str = "\
+update_check = true
 autosubmit = false
 presubmit = false
 
@@ -76,6 +77,10 @@ remote = 'aosp'
 project = 'kernel/manifest'
 ";
 
+fn default_update_check() -> bool {
+  true
+}
+
 fn default_autosubmit() -> bool {
   false
 }
@@ -98,6 +103,9 @@ fn default_manifest_file() -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
+  #[serde(default = "default_update_check")]
+  pub update_check: bool,
+
   #[serde(default = "default_autosubmit")]
   pub autosubmit: bool,
 

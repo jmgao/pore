@@ -60,12 +60,14 @@ mod depot;
 mod hooks;
 mod manifest;
 mod tree;
+mod update_check;
 mod util;
 
 use config::Config;
 use depot::Depot;
 use manifest::Manifest;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
+use update_check::UpdateChecker;
 
 lazy_static! {
   static ref AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().green();
@@ -685,6 +687,12 @@ fn main() {
     None => Pool::with_default_size(),
   };
 
+  let update_checker = if config.update_check {
+    Some(UpdateChecker::fetch())
+  } else {
+    None
+  };
+
   let result = || -> Result<i32, Error> {
     match matches.subcommand() {
       ("init", Some(submatches)) => {
@@ -904,6 +912,10 @@ fn main() {
       }
     }
   }();
+
+  if let Some(u) = update_checker {
+    u.finish();
+  }
 
   match result {
     Ok(rc) => std::process::exit(rc),

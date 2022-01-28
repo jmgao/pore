@@ -14,6 +14,7 @@ futures = "0.3"
 indoc = "1.0"
 
 serde = "1.0"
+serde_yaml = "0.8"
 serde_derive = "1.0"
 toml = "0.5"
 
@@ -37,6 +38,9 @@ url = "2.2.2"
 walkdir = "2.3.2"
 
 git2 = "0.13.25"
+
+reqwest = { version = "0.11.9", features = ["blocking"] }
+version-compare = "0.1.0"
 
 console = "0.15.0"
 progpool = "0.2"

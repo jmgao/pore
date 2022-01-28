@@ -1,0 +1,9 @@
+---
+versions:
+- number: unreleased
+  date: ""
+  changes: []
+- number: 0.1.0
+  date: "2022-01-27"
+  changes:
+  - Initial numbered release.
