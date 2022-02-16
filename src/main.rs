@@ -350,7 +350,7 @@ fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<&str>, c
         .join(".repo")
         .join("project-objects")
         .join(project.clone() + ".git");
-      let depot_path = depot.objects_mirror(remote_config, Depot::apply_project_renames(remote_config, &project));
+      let depot_path = depot.objects_mirror(remote_config, &Depot::apply_project_renames(remote_config, &project));
 
       if !src_path.is_dir() {
         eprintln!("Skipping missing project: {}", project);

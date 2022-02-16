@@ -27,6 +27,8 @@ pub struct Depot {
   pub path: PathBuf,
 }
 
+pub struct ProjectName(String);
+
 impl Depot {
   pub fn new(name: String, path: PathBuf) -> Result<Depot, Error> {
     Ok(Depot { name, path })
@@ -103,25 +105,25 @@ impl Depot {
     Ok(())
   }
 
-  pub fn apply_project_renames<T: AsRef<str>>(remote_config: &config::RemoteConfig, project: T) -> String {
+  pub fn apply_project_renames<T: AsRef<str>>(remote_config: &config::RemoteConfig, project: T) -> ProjectName {
     for rename in &remote_config.project_renames {
       if rename.regex.is_match(project.as_ref()) {
         let result = rename.regex.replace(project.as_ref(), &rename.replacement).into();
-        return result;
+        return ProjectName(result);
       }
     }
 
-    return project.as_ref().into();
+    return ProjectName(project.as_ref().into());
   }
 
-  pub fn objects_mirror<T: AsRef<str>>(&self, remote_config: &config::RemoteConfig, project: T) -> PathBuf {
-    let repo_name: String = Depot::apply_project_renames(remote_config, project.as_ref()) + ".git";
+  pub fn objects_mirror(&self, _remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
+    let repo_name: String = project.0.clone() + ".git";
     self.path.join("objects").join(repo_name)
   }
 
-  pub fn refs_mirror<T: AsRef<str>>(&self, remote_config: &config::RemoteConfig, project: T) -> PathBuf {
+  pub fn refs_mirror(&self, remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
     let remote: &str = remote_config.name.as_ref();
-    let repo_name: String = Depot::apply_project_renames(remote_config, project.as_ref()) + ".git";
+    let repo_name: String = project.0.clone() + ".git";
     self.path.join("refs").join(remote).join(repo_name)
   }
 
@@ -135,10 +137,11 @@ impl Depot {
   ) -> Result<(), Error> {
     ensure!(!project.starts_with('/'), "invalid project path {}", project);
     ensure!(!project.ends_with('/'), "invalid project path {}", project);
+    let local_project: ProjectName = Depot::apply_project_renames(remote_config, project);
 
     // TODO: Add locking?
-    let objects_path = self.objects_mirror(&remote_config, project);
-    let repo_url = remote_config.url.to_owned() + project + ".git";
+    let objects_path = self.objects_mirror(&remote_config, &local_project);
+    let repo_url = remote_config.url.to_owned() + &project + ".git";
 
     let objects_repo = Depot::open_or_create_bare_repo(&objects_path)?;
     if objects_repo.find_remote(&remote_config.name).is_ok() {
@@ -189,7 +192,7 @@ impl Depot {
       bail!("git fetch failed: {}", String::from_utf8_lossy(&git_output.stderr));
     }
 
-    let refs_path = self.refs_mirror(remote_config, project);
+    let refs_path = self.refs_mirror(remote_config, &local_project);
     if git2::Repository::open(&refs_path).is_err() {
       Depot::clone_alternates(&objects_path, &refs_path, true).context("failed to clone alternates")?;
     }
@@ -213,12 +216,17 @@ impl Depot {
     path: T,
   ) -> Result<(), Error> {
     let path: &Path = path.as_ref();
+    let local_project = Depot::apply_project_renames(remote_config, project);
 
-    let repo = Depot::clone_alternates(self.objects_mirror(&remote_config, project), path.to_path_buf(), false)?;
+    let repo = Depot::clone_alternates(
+      self.objects_mirror(&remote_config, &local_project),
+      path.to_path_buf(),
+      false,
+    )?;
     repo
       .remote(
         &remote_config.name,
-        self.refs_mirror(remote_config, project).to_str().unwrap(),
+        self.refs_mirror(remote_config, &local_project).to_str().unwrap(),
       )
       .context("failed to create remote")?;
 
@@ -228,7 +236,7 @@ impl Depot {
       .remote_set_pushurl(&remote_config.name, Some(&format!("{}{}", remote_config.url, project)))
       .context("failed to set remote pushurl")?;
 
-    self.update_remote_refs(&remote_config, project, &path)?;
+    self.update_remote_refs(&remote_config, &project, &path)?;
 
     let head = util::parse_revision(&repo, &remote_config.name, &branch)?;
     repo
@@ -247,9 +255,10 @@ impl Depot {
     path: T,
   ) -> Result<(), Error> {
     let path: &Path = path.as_ref();
+    let local_project = Depot::apply_project_renames(remote_config, project);
 
     // TODO: Respect <remote alias="...">?
-    let mirror_path = self.refs_mirror(remote_config, project);
+    let mirror_path = self.refs_mirror(remote_config, &local_project);
     let repo_path = Depot::git_path(path);
     let mirror_refs = mirror_path.join("refs").join("heads");
     let repo_refs = repo_path.join("refs").join("remotes").join(&remote_config.name);

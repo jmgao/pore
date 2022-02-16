@@ -716,8 +716,10 @@ impl Tree {
                   .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
                 bail!("currently on a branch ({})", branch_name);
               } else {
-                let new_head = util::parse_revision(&repo, &remote.name, &revision)
-                  .context("failed to find revision to sync to".to_string())?;
+                let new_head = util::parse_revision(&repo, &remote.name, &revision).context(format!(
+                  "failed to find revision to sync to (wanted {}/{} in {:?})",
+                  remote.name, revision, project_path
+                ))?;
 
                 // Current head can't be a symbolic reference, because it has to be detached.
                 let current_head = current_head
@@ -1316,7 +1318,8 @@ impl Tree {
         let remote_config = config
           .find_remote(&project.remote)
           .context(format!("failed to find remote {}", project.remote))?;
-        let obj_repo_path = depot.objects_mirror(&remote_config, project.project_name);
+        let local_project = Depot::apply_project_renames(&remote_config, project.project_name);
+        let obj_repo_path = depot.objects_mirror(&remote_config, &local_project);
         let obj_repo = git2::Repository::open_bare(&obj_repo_path)
           .context(format!("failed to open object repository {:?}", obj_repo_path))?;
 
