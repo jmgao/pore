@@ -17,7 +17,7 @@ pub struct Version {
 }
 
 pub struct UpdateChecker {
-  result: mpsc::Receiver<Result<Option<Vec<Version>>, Error>>
+  result: mpsc::Receiver<Result<Option<Vec<Version>>, Error>>,
 }
 
 const UPDATE_URL: &str = "https://raw.githubusercontent.com/jmgao/pore/master/versions.yaml";
@@ -41,9 +41,7 @@ impl UpdateChecker {
       let _ = tx.send(Ok(None));
     });
 
-    UpdateChecker {
-      result: rx,
-    }
+    UpdateChecker { result: rx }
   }
 
   #[allow(dead_code)]
@@ -54,9 +52,7 @@ impl UpdateChecker {
       UpdateChecker::parse(data)
     }();
     tx.send(result).unwrap();
-    UpdateChecker {
-      result: rx,
-    }
+    UpdateChecker { result: rx }
   }
 
   pub fn filter_new_versions(versions: Vec<Version>) -> Vec<Version> {
@@ -64,7 +60,7 @@ impl UpdateChecker {
     let current_version = version_compare::Version::from(crate_version!());
     for version in versions {
       if version.number == "unreleased" {
-        continue
+        continue;
       }
 
       if current_version < version_compare::Version::from(&version.number) {

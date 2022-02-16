@@ -676,19 +676,23 @@ fn main() {
   };
 
   let cmd = matches.subcommand();
-  let pool_size = matches.value_of("JOBS").map(|job_str| {
-    if let Ok(jobs) = job_str.parse::<i32>() {
-      jobs
-    } else {
-      fatal!("failed to parse jobs value: {}", job_str);
-    }
-  }).or_else(|| {
-    // Command-specific override
-    config.parallelism.get(cmd.0).cloned().or_else(|| {
-      // Global override
-      config.parallelism.get("global").cloned()
+  let pool_size = matches
+    .value_of("JOBS")
+    .map(|job_str| {
+      if let Ok(jobs) = job_str.parse::<i32>() {
+        jobs
+      } else {
+        fatal!("failed to parse jobs value: {}", job_str);
+      }
     })
-  }).unwrap_or(0);
+    .or_else(|| {
+      // Command-specific override
+      config.parallelism.get(cmd.0).cloned().or_else(|| {
+        // Global override
+        config.parallelism.get("global").cloned()
+      })
+    })
+    .unwrap_or(0);
 
   let num_cpus = num_cpus::get();
   let pool_size = if pool_size == 0 {
