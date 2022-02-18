@@ -96,6 +96,10 @@ fn default_presubmit() -> bool {
   false
 }
 
+fn default_upload_options() -> Vec<String> {
+  Vec::new()
+}
+
 fn default_project_renames() -> Vec<ProjectRename> {
   Vec::new()
 }
@@ -149,6 +153,9 @@ pub struct RemoteConfig {
 
   #[serde(default = "default_project_renames")]
   pub project_renames: Vec<ProjectRename>,
+
+  #[serde(default = "default_upload_options")]
+  pub default_upload_options: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

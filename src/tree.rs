@@ -1208,6 +1208,8 @@ impl Tree {
       let remote_name = project_meta.find_remote(&manifest)?;
       let dest_branch_name = project_meta.find_dest_branch(&manifest)?;
 
+      let remote_config = config.find_remote(&remote_name)?;
+
       let head = repo.head().context("could not determine HEAD")?;
       let src_branch_info = BranchInfo::from_ref(head)?;
       let dest_branch_info = BranchInfo::from_branch_name(
@@ -1230,6 +1232,7 @@ impl Tree {
         &commits,
       )?;
 
+      let upload_options = remote_config.default_upload_options.clone();
       let cmd = util::make_push_command(
         self.path.join(&project.project_path),
         &remote_name,
@@ -1247,6 +1250,7 @@ impl Tree {
           private,
           wip,
           ps_description,
+          upload_options,
         },
       );
 
