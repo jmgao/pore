@@ -7,6 +7,7 @@ versions:
   - Reduce the default parallelism of status to increase performance.
   - Fix a bug which caused changes to the manifest repository to be ignored.
   - Always use libgit2-rs's vendored libgit2.
+  - "`pore sync -l` will no longer skip checking out the manifest repository."
 - number: 0.1.0
   date: "2022-01-27"
   changes:

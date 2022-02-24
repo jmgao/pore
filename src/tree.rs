@@ -956,28 +956,26 @@ impl Tree {
     fetch_tags: bool,
     mut ssh_masters: &mut HashMap<String, std::process::Child>,
   ) -> Result<i32, Error> {
-    if fetch_type == FetchType::Fetch {
-      // Sync the manifest repo first.
-      let manifest = vec![ProjectInfo {
-        project_path: ".pore/manifest".into(),
-        project_name: self.config.manifest.clone(),
-        remote: self.config.remote.clone(),
-        revision: self.config.branch.clone(),
-        file_ops: Vec::new(),
-        manifest_project: true,
-      }];
+    // Sync the manifest repo first.
+    let manifest = vec![ProjectInfo {
+      project_path: ".pore/manifest".into(),
+      project_name: self.config.manifest.clone(),
+      remote: self.config.remote.clone(),
+      revision: self.config.branch.clone(),
+      file_ops: Vec::new(),
+      manifest_project: true,
+    }];
 
-      self.sync_repos(
-        &mut pool,
-        Arc::clone(&config),
-        manifest,
-        Some(FetchTarget::Upstream),
-        checkout,
-        false,
-        fetch_tags,
-        &mut ssh_masters,
-      )?;
-    }
+    self.sync_repos(
+      &mut pool,
+      Arc::clone(&config),
+      manifest,
+      Some(FetchTarget::Upstream),
+      checkout,
+      false,
+      fetch_tags,
+      &mut ssh_masters,
+    )?;
 
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone())?;
