@@ -38,7 +38,7 @@ pathdiff = "0.2.1"
 url = "2.2.2"
 walkdir = "2.3.2"
 
-git2 = "0.13.25"
+git2 = { version = "0.13.25", features = ["vendored-libgit2"] }
 
 isatty = "0.1.9"
 reqwest = { version = "0.11.9", features = ["blocking"] }
