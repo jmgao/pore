@@ -5,6 +5,7 @@ versions:
   changes:
   - Add configuration of parallelism, including for specific commands.
   - Reduce the default parallelism of status to increase performance.
+  - Fix a bug which caused changes to the manifest repository to be ignored.
 - number: 0.1.0
   date: "2022-01-27"
   changes:

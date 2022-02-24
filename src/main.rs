@@ -169,25 +169,6 @@ struct ProjectStatusDisplayData {
 
 impl ProjectStatusDisplayData {
   pub fn from_status(status: &tree::ProjectStatus) -> ProjectStatusDisplayData {
-    let ahead = if status.ahead != 0 {
-      Some(console::style(format!("↑{}", status.ahead)).green())
-    } else {
-      None
-    };
-
-    let behind = if status.behind != 0 {
-      Some(console::style(format!("↓{}", status.behind)).red())
-    } else {
-      None
-    };
-
-    let ahead_behind = match (ahead, behind) {
-      (Some(a), Some(b)) => format!(" [{} {}]", a, b),
-      (Some(a), None) => format!(" [{}]", a),
-      (None, Some(b)) => format!(" [{}]", b),
-      (None, None) => "".to_string(),
-    };
-
     let branch = match &status.branch {
       Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
       None => console::style("no branch".to_string()).red(),
@@ -195,7 +176,7 @@ impl ProjectStatusDisplayData {
 
     ProjectStatusDisplayData {
       location: PROJECT_STYLE.apply_to(format!("project {}", status.path)).to_string(),
-      branch: format!("{}{}", branch, ahead_behind),
+      branch: format!("{}{}", branch, util::ahead_behind(status.ahead, status.behind)),
       top_commit: status.commit_summary.clone().unwrap_or_default(),
       files: status
         .files

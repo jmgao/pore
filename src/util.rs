@@ -194,3 +194,24 @@ pub fn read_line() -> Result<String, Error> {
 pub fn ssh_mux_path() -> String {
   format!("~/.ssh/pore_sshmux_{}_%r@%h:%p", std::process::id())
 }
+
+pub fn ahead_behind(ahead: usize, behind: usize) -> String {
+  let ahead = if ahead != 0 {
+    Some(console::style(format!("↑{}", ahead)).green())
+  } else {
+    None
+  };
+
+  let behind = if behind != 0 {
+    Some(console::style(format!("↓{}", behind)).red())
+  } else {
+    None
+  };
+
+  match (ahead, behind) {
+    (Some(a), Some(b)) => format!(" [{} {}]", a, b),
+    (Some(a), None) => format!(" [{}]", a),
+    (None, Some(b)) => format!(" [{}]", b),
+    (None, None) => "".to_string(),
+  }
+}

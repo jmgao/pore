@@ -709,36 +709,40 @@ impl Tree {
               // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
               let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
               let current_head = repo.head().context("failed to get HEAD")?;
+              let current_head_oid = current_head.target().context("HEAD not a direct reference?")?;
+              let new_head = util::parse_revision(&repo, &remote.name, &revision).context(format!(
+                "failed to find revision to sync to (wanted {}/{} in {:?})",
+                remote.name, revision, project_path
+              ))?;
 
-              if !head_detached {
-                let branch_name = current_head
-                  .shorthand()
-                  .ok_or_else(|| format_err!("failed to get shorthand for HEAD"))?;
-                bail!("currently on a branch ({})", branch_name);
+              if new_head.id() == current_head_oid {
+                // We're already at the top of tree.
               } else {
-                let new_head = util::parse_revision(&repo, &remote.name, &revision).context(format!(
-                  "failed to find revision to sync to (wanted {}/{} in {:?})",
-                  remote.name, revision, project_path
-                ))?;
-
-                // Current head can't be a symbolic reference, because it has to be detached.
-                let current_head = current_head
-                  .target()
-                  .ok_or_else(|| format_err!("failed to get target of HEAD"))?;
-
-                // Only do anything if we're not already on the new HEAD.
-                if current_head != new_head.id() {
-                  let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
-                  if let Err(err) = probe {
-                    bail!(err);
-                  }
-
-                  repo
-                    .checkout_tree(&new_head, None)
-                    .context(format!("failed to checkout to {:?}", new_head))?;
-
-                  repo.set_head_detached(new_head.id()).context("failed to detach HEAD")?;
+                // Check if the new head descends from the current one.
+                if !repo.graph_descendant_of(new_head.id(), current_head_oid)? {
+                  let (ahead, behind) = repo.graph_ahead_behind(current_head_oid, new_head.id())?;
+                  let head_name = if head_detached {
+                    console::style("no branch".to_string()).red().to_string()
+                  } else {
+                    let head_short = current_head.shorthand().context("branch name contains invalid UTF-8")?;
+                    format!("branch {}", BRANCH_STYLE.apply_to(&head_short))
+                  };
+                  bail!("{} {}", head_name, util::ahead_behind(ahead, behind));
                 }
+
+                // Do a dry run first to look for dirty changes.
+                let probe = repo.reset(
+                  &new_head,
+                  git2::ResetType::Hard,
+                  Some(git2::build::CheckoutBuilder::new().dry_run()),
+                );
+                if let Err(err) = probe {
+                  bail!(err);
+                }
+
+                repo
+                  .reset(&new_head, git2::ResetType::Hard, None)
+                  .context(format!("failed to checkout to {:?}", new_head))?;
               }
             } else {
               depot.clone_repo(&remote, &project_name, &revision, &project_path)?;
@@ -754,9 +758,13 @@ impl Tree {
                 .context("failed to get HEAD")?
                 .peel_to_commit()
                 .context("failed to peel HEAD to commit")?;
-              let mut branch = repo
-                .branch("default", &head, true)
-                .context("failed to create manifest default branch")?;
+
+              let mut branch = match repo.find_branch("default", git2::BranchType::Local) {
+                Ok(branch) => branch,
+                Err(_) => repo
+                  .branch("default", &head, true)
+                  .context("failed to create manifest default branch")?,
+              };
               branch
                 .set_upstream(Some(&format!("origin/{}", project_info.revision)))
                 .context("failed to set manifest branch upstream")?;
