@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Error};
+use joinery::Joinable;
 use progpool::{Job, Pool};
 
 #[macro_export]
@@ -424,6 +425,44 @@ fn set_trace_id() {
   std::env::set_var(key, my_id)
 }
 
+fn cmd_info(
+    _config: Arc<Config>,
+    target_path: PathBuf,
+    _diff: bool,
+    _overview: bool,
+    _branch: bool,
+    _local: bool
+) -> Result<i32, Error> {
+    let manifest_dir = target_path.join(".repo").join("manifests");
+    let manifest_path = target_path.join(".repo").join("manifest.xml");
+    let manifest = Manifest::parse(&manifest_dir, &manifest_path)?;
+    let manifest_default = manifest.default.expect("manifest missing <default>");
+    let manifest_default_revision = manifest_default.revision.expect("manifest <default> missing revision");
+
+    // Look up manifest git project branch information via git config
+    let manifests_git_config_path = manifest_dir.join(".git").join("config");
+    let manifests_git_config_path = Path::new(&manifests_git_config_path);
+    let manifest_git_config = git2::Config::open(manifests_git_config_path).expect("unable to open manifests git config");
+
+    let default_merge_branch = manifest_git_config.get_str("branch.default.merge").unwrap_or("refs/heads/master");
+
+    // Get the active groups from the tree config
+    let tree = Tree::from_path(target_path).expect("unable to find pore tree");
+    let group_filters: Vec<String> = tree.config.group_filters.unwrap_or(vec![GroupFilter::Include(String::from("default"))]).iter().map(|gf| {
+        match gf {
+            GroupFilter::Include(s) => s.clone(),
+            GroupFilter::Exclude(s) => "-".to_string() + s
+        }
+    }).collect();
+    let group_filters = group_filters.join_with(",");
+
+    println!("Manifest branch: {}", manifest_default_revision);
+    println!("Manifest merge branch: {}", default_merge_branch);
+    println!("Manifest groups: {}", group_filters);
+    println!("----------------------------");
+    Ok(0)
+}
+
 fn main() {
   let app = clap_app!(pore =>
     (version: crate_version!())
@@ -601,6 +640,13 @@ fn main() {
     (@subcommand config =>
       (about: "prints the parsed configuration file")
       (@arg DEFAULT: --default "print the default configuration")
+    )
+    (@subcommand info =>
+      (about: "implementation of repo info")
+      (@arg DIFF: -d --diff "show full info and commit diff including remote branches")
+      //(@arg OVERVIEW: -o --overview "show overview of all local commits")
+      (@arg BRANCH: -b --current-branch "consider only checked out branches")
+      (@arg LOCAL: -l --local-only "disable all remote operations")
     )
   );
 
@@ -904,6 +950,18 @@ fn main() {
         }
         Ok(0)
       }
+
+      ("info", Some(submatches)) => {
+          let tree = Tree::find_from_path(cwd)?;
+          cmd_info(
+              config,
+              tree.path,
+              submatches.is_present("DIFF"),
+              submatches.is_present("OVERVIEW"),
+              submatches.is_present("BRANCH"),
+              submatches.is_present("LOCAL")
+          )
+      },
 
       _ => {
         unreachable!();
