@@ -568,6 +568,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "joinery"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72167d68f5fce3b8655487b8038691a3c9984ee769590f93f2a631f4ad64e4f5"
+
+[[package]]
 name = "js-sys"
 version = "0.3.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,6 +859,7 @@ dependencies = [
  "git2",
  "indoc",
  "isatty",
+ "joinery",
  "lazy_static",
  "log",
  "maplit",

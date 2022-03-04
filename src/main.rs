@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Error};
+use joinery::Joinable;
 use progpool::{Job, Pool};
 
 #[macro_export]
@@ -424,6 +425,105 @@ fn set_trace_id() {
   std::env::set_var(key, my_id)
 }
 
+fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Error> {
+  let manifest_branch = &tree.config.branch;
+  // TODO: Actually use the manifest for this.
+  let manifest_merge_branch = format!("refs/heads/{}", manifest_branch);
+
+  // Get the active groups from the tree config
+  let group_filters = tree.config.group_filters.clone();
+  let group_filters: Vec<String> = group_filters
+    .unwrap_or(vec![GroupFilter::Include(String::from("default"))])
+    .iter()
+    .map(|gf| match gf {
+      GroupFilter::Include(s) => s.clone(),
+      GroupFilter::Exclude(s) => "-".to_string() + &s,
+    })
+    .collect();
+  let group_filters = group_filters.join_with(",");
+
+  println!("Manifest branch: {}", manifest_branch);
+  println!("Manifest merge branch: {}", manifest_merge_branch);
+  println!("Manifest groups: {}", group_filters);
+  println!("----------------------------");
+
+  let manifest = tree.read_manifest()?;
+  let projects = tree.collect_manifest_projects(config, &manifest, None)?;
+  let selected_projects = if paths.is_empty() {
+    projects
+  } else {
+    // This is slower than it needs to be, but the common case is that paths.len() == 1.
+    let mut result = Vec::new();
+    for path in paths {
+      let mut found = false;
+
+      let realpath = std::fs::canonicalize(path).context("failed to canonicalize path")?;
+      let project_path = pathdiff::diff_paths(realpath, &tree.path).context("path not in tree?")?;
+      let project_path = project_path.to_string_lossy();
+      for manifest_project in &projects {
+        if manifest_project.project_path == project_path {
+          result.push(manifest_project.clone());
+          found = true;
+          break;
+        }
+      }
+
+      if !found {
+        bail!("project {:?} not found", path);
+      }
+    }
+    result
+  };
+
+  for project in selected_projects {
+    let project_path = tree.path.join(project.project_path);
+    let repo = git2::Repository::open(&project_path).context("failed to open git repository")?;
+    let current_head = repo.head().context("failed to get HEAD")?;
+    let current_head_commit = current_head.peel_to_commit().context("failed to peel HEAD to commit")?;
+    let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
+    let current_branch = if head_detached {
+      None
+    } else {
+      Some(
+        current_head
+          .shorthand()
+          .context("branch name contained invalid UTF-8")?,
+      )
+    };
+    let mut local_branches = Vec::new();
+    let branches = repo
+      .branches(Some(git2::BranchType::Local))
+      .context("failed to fetch branches")?;
+    for branch in branches {
+      let branch_name = branch?
+        .0
+        .name()?
+        .context("branch name contained invalid UTF-8")?
+        .to_string();
+      local_branches.push(branch_name);
+    }
+
+    println!("Project: {}", project.project_name);
+    println!("Mount path: {}", project_path.to_string_lossy());
+    println!("Current revision: {}", current_head_commit.id());
+    if let Some(branch) = current_branch {
+      println!("Current branch: {}", branch);
+    }
+    println!("Manifest revision: {}", project.revision);
+    if local_branches.len() == 0 {
+      println!("Local Branches: 0");
+    } else {
+      println!(
+        "Local Branches: {} [{}]",
+        local_branches.len(),
+        local_branches.join_with(", ")
+      );
+    }
+    println!("----------------------------");
+  }
+  Ok(0)
+}
+
 fn main() {
   let app = clap_app!(pore =>
     (version: crate_version!())
@@ -601,6 +701,11 @@ fn main() {
     (@subcommand config =>
       (about: "prints the parsed configuration file")
       (@arg DEFAULT: --default "print the default configuration")
+    )
+    (@subcommand info =>
+      (about: "implementation of repo info")
+      (@arg LOCAL: -l --("local-only") "disable all remote operations")
+      (@arg PATH: ...)
     )
   );
 
@@ -903,6 +1008,16 @@ fn main() {
           println!("{}", toml::to_string_pretty(config.as_ref())?);
         }
         Ok(0)
+      }
+
+      ("info", Some(submatches)) => {
+        let tree = Tree::find_from_path(cwd)?;
+        let paths = if let Some(paths) = submatches.values_of("PATH") {
+          paths.map(Path::new).collect::<Vec<&Path>>()
+        } else {
+          Vec::new()
+        };
+        cmd_info(config, &tree, &paths)
       }
 
       _ => {

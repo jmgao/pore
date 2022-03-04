@@ -113,7 +113,7 @@ pub enum CheckoutType {
   NoCheckout,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum GroupFilter {
   Include(String),
   Exclude(String),
@@ -213,13 +213,13 @@ pub struct TreeConfig {
 }
 
 #[derive(Clone, Debug)]
-struct ProjectInfo {
-  project_path: String,
-  project_name: String,
-  remote: String,
-  revision: String,
-  file_ops: Vec<manifest::FileOperation>,
-  manifest_project: bool,
+pub struct ProjectInfo {
+  pub project_path: String,
+  pub project_name: String,
+  pub remote: String,
+  pub revision: String,
+  pub file_ops: Vec<manifest::FileOperation>,
+  pub manifest_project: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -503,14 +503,14 @@ impl Tree {
     Ok(toml::from_str(&text).context("failed to deserialize tree config")?)
   }
 
-  fn read_manifest(&self) -> Result<Manifest, Error> {
+  pub fn read_manifest(&self) -> Result<Manifest, Error> {
     let manifest_path = self.path.join(".pore").join("manifest");
     let manifest_file = self.path.join(".pore").join("manifest.xml");
     let manifest = Manifest::parse(&manifest_path, &manifest_file).context("failed to read manifest")?;
     Ok(manifest)
   }
 
-  fn collect_manifest_projects(
+  pub fn collect_manifest_projects(
     &self,
     config: Arc<Config>,
     manifest: &Manifest,
