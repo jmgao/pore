@@ -751,7 +751,6 @@ impl Tree {
             if project_info.manifest_project {
               // Some tools look at the upstream tracking branch of .repo/manifest to determine
               // what manifest branch is being used.
-              // TODO: repo uses origin as the upstream, regardless of what the remote is called.
               let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
               let head = repo
                 .head()
@@ -765,8 +764,10 @@ impl Tree {
                   .branch("default", &head, true)
                   .context("failed to create manifest default branch")?,
               };
+
+              // TODO: repo uses origin as the upstream, regardless of what the remote is called.
               branch
-                .set_upstream(Some(&format!("origin/{}", project_info.revision)))
+                .set_upstream(Some(&format!("{}/{}", project_info.remote, project_info.revision)))
                 .context("failed to set manifest branch upstream")?;
               repo
                 .set_head("refs/heads/default")

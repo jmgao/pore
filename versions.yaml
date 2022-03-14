@@ -3,6 +3,7 @@ versions:
 - number: unreleased
   date: ""
   changes:
+  - Fix manifest remote when it's not literally origin.
   - Partially implement `repo info`.
 - number: 0.1.1
   date: "2022-02-23"
