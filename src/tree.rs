@@ -768,7 +768,10 @@ impl Tree {
               // TODO: repo uses origin as the upstream, regardless of what the remote is called.
               branch
                 .set_upstream(Some(&format!("{}/{}", project_info.remote, project_info.revision)))
-                .context("failed to set manifest branch upstream")?;
+                .context(format!(
+                  "failed to set manifest branch upstream to {}/{}",
+                  project_info.remote, project_info.revision
+                ))?;
               repo
                 .set_head("refs/heads/default")
                 .context("failed to set manifest HEAD")?;
