@@ -2,7 +2,8 @@
 versions:
 - number: unreleased
   date: ""
-  changes: []
+  changes:
+  - Only print headers when there's output in `pore forall`. (#85)
 - number: 0.1.2
   date: "2022-03-14"
   changes:

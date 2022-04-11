@@ -1598,22 +1598,25 @@ impl Tree {
     for result in results.successful {
       let project_name = result.name;
       let result = result.result;
-      if !repo_compat {
-        if result.rc == 0 {
-          println!("{}", PROJECT_STYLE.apply_to(project_name));
-        } else {
-          println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
-          rc = result.rc;
-        }
-      }
-      let lines = result.output.split(|&c| c == b'\n');
-      for line in lines {
-        let mut stdout = std::io::stdout();
+      let display = result.output.len() != 0 || (!repo_compat && result.rc != 0);
+      if display {
         if !repo_compat {
-          stdout.write_all(b"  ")?;
+          if result.rc == 0 {
+            println!("{}", PROJECT_STYLE.apply_to(project_name));
+          } else {
+            println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
+            rc = result.rc;
+          }
         }
-        stdout.write_all(line)?;
-        stdout.write_all(b"\n")?;
+        let lines = result.output.split(|&c| c == b'\n');
+        for line in lines {
+          let mut stdout = std::io::stdout();
+          if !repo_compat {
+            stdout.write_all(b"  ")?;
+          }
+          stdout.write_all(line)?;
+          stdout.write_all(b"\n")?;
+        }
       }
     }
 
