@@ -2,7 +2,12 @@
 versions:
 - number: unreleased
   date: ""
+  changes: []
+- number: 0.1.3
+  date: "2022-09-01"
   changes:
+  - Don't fetch manifest repo when syncing with -l.
+  - Implement `pore sync -d`.
   - Only print headers when there's output in `pore forall`. (#85)
 - number: 0.1.2
   date: "2022-03-14"
