@@ -977,16 +977,19 @@ impl Tree {
       manifest_project: true,
     }];
 
-    self.sync_repos(
-      &mut pool,
-      Arc::clone(&config),
-      manifest,
-      Some(FetchTarget::Upstream),
-      checkout,
-      false,
-      fetch_tags,
-      &mut ssh_masters,
-    )?;
+    if fetch_type != FetchType::NoFetch {
+      self.sync_repos(
+        &mut pool,
+        Arc::clone(&config),
+        manifest,
+        Some(FetchTarget::Upstream),
+        checkout,
+        false,
+        detach,
+        fetch_tags,
+        &mut ssh_masters,
+      )?;
+    }
 
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone())?;
