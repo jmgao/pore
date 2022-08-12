@@ -575,6 +575,7 @@ impl Tree {
     fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
     do_project_cleanup: bool,
+    detach: bool,
     fetch_tags: bool,
     ssh_masters: &mut HashMap<String, std::process::Child>,
   ) -> Result<i32, Error> {
@@ -703,8 +704,8 @@ impl Tree {
               //  - HEAD might be attached to a branch
               //  - the repo might have uncommitted changes in the index or worktree
               //
-              // If HEAD is attached to a branch, we choose to do nothing (for now). At some point, we should probably
-              // try to perform the equivalent of `git pull --rebase`.
+              // If HEAD is attached to a branch, we choose to do nothing (for now), unless explicitly told to detach.
+              // At some point, we should probably try to perform the equivalent of `git pull --rebase`.
               //
               // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
               let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
@@ -718,31 +719,34 @@ impl Tree {
               if new_head.id() == current_head_oid {
                 // We're already at the top of tree.
               } else {
-                // Check if the new head descends from the current one.
-                if !repo.graph_descendant_of(new_head.id(), current_head_oid)? {
-                  let (ahead, behind) = repo.graph_ahead_behind(current_head_oid, new_head.id())?;
-                  let head_name = if head_detached {
-                    console::style("no branch".to_string()).red().to_string()
-                  } else {
-                    let head_short = current_head.shorthand().context("branch name contains invalid UTF-8")?;
-                    format!("branch {}", BRANCH_STYLE.apply_to(&head_short))
-                  };
-                  bail!("{} {}", head_name, util::ahead_behind(ahead, behind));
+                if detach {
+                  repo.set_head_detached(current_head_oid)?;
+                } else {
+                  // Check if the new head descends from the current one.
+                  if !repo.graph_descendant_of(new_head.id(), current_head_oid)? {
+                    let (ahead, behind) = repo.graph_ahead_behind(current_head_oid, new_head.id())?;
+                    let head_name = if head_detached {
+                      console::style("no branch".to_string()).red().to_string()
+                    } else {
+                      let head_short = current_head.shorthand().context("branch name contains invalid UTF-8")?;
+                      format!("branch {}", BRANCH_STYLE.apply_to(&head_short))
+                    };
+                    bail!("{} {}", head_name, util::ahead_behind(ahead, behind));
+                  }
                 }
 
                 // Do a dry run first to look for dirty changes.
-                let probe = repo.reset(
-                  &new_head,
-                  git2::ResetType::Hard,
-                  Some(git2::build::CheckoutBuilder::new().dry_run()),
-                );
+                let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
                 if let Err(err) = probe {
                   bail!(err);
                 }
 
                 repo
-                  .reset(&new_head, git2::ResetType::Hard, None)
+                  .checkout_tree(&new_head, None)
                   .context(format!("failed to checkout to {:?}", new_head))?;
+                repo
+                  .reset(&new_head, git2::ResetType::Soft, None)
+                  .context(format!("failed to move HEAD to {:?}", new_head))?;
               }
             } else {
               depot.clone_repo(&remote, &project_name, &revision, &project_path)?;
@@ -924,6 +928,7 @@ impl Tree {
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
+    detach: bool,
     fetch_tags: bool,
   ) -> Result<i32, Error> {
     let mut ssh_masters = HashMap::new();
@@ -934,6 +939,7 @@ impl Tree {
       fetch_type,
       fetch_target,
       checkout,
+      detach,
       fetch_tags,
       &mut ssh_masters,
     );
@@ -957,6 +963,7 @@ impl Tree {
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
+    detach: bool,
     fetch_tags: bool,
     mut ssh_masters: &mut HashMap<String, std::process::Child>,
   ) -> Result<i32, Error> {
@@ -994,6 +1001,7 @@ impl Tree {
       },
       checkout,
       sync_under == None,
+      detach,
       fetch_tags,
       &mut ssh_masters,
     )?;

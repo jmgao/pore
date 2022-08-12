@@ -158,6 +158,7 @@ fn cmd_clone(
     FetchTarget::Upstream,
     CheckoutType::Checkout,
     false,
+    false,
   )
 }
 
@@ -592,6 +593,7 @@ fn main() {
       (@arg BRANCH: -b --branch +takes_value +multiple number_of_values(1)
         "specify a branch to fetch (can be used multiple times)"
       )
+      (@arg DETACH: -d "detach projects back to manifest revision")
       (@arg REFS_ONLY: -r --("refs-only") "don't checkout, only update the refs")
       (@arg FETCH_TAGS: -t --tags "fetch all remote tags")
       (@arg PATH: ...
@@ -848,6 +850,7 @@ fn main() {
           FetchType::Fetch,
           fetch_target,
           CheckoutType::NoCheckout,
+          false,
           fetch_tags,
         )
       }
@@ -862,6 +865,7 @@ fn main() {
         let sync_under = submatches.values_of("PATH").map(Iterator::collect);
 
         let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
+        let detach = submatches.is_present("DETACH");
         let fetch_all = submatches.is_present("FETCH_ALL");
         let fetch_tags = submatches.is_present("FETCH_TAGS") || fetch_all;
 
@@ -887,6 +891,7 @@ fn main() {
           } else {
             CheckoutType::Checkout
           },
+          detach,
           fetch_tags,
         )
       }
