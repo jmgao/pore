@@ -852,15 +852,27 @@ impl Tree {
         let previous: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
         self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
         let current: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
-        let diff = previous.difference(&current);
+
+        // Since we're using rename to move projects, we need to handle parents before children
+        // (which will then fail because they've already been moved).
+        let mut diff: Vec<_> = previous.difference(&current).collect();
+        diff.sort();
+
         for ref project in diff {
           let src_path = self.path.join(project);
           let date = Utc::now().format("%Y%m%d-%H%M%S").to_string();
           let dst_path = self.path.join("lost+found").join(&date).join(project);
           println!("Moving deleted project {} to {:?}", project, dst_path);
-          std::fs::create_dir_all(&dst_path).context("failed to create lost+found directory")?;
-          std::fs::rename(&src_path, &dst_path)
-            .context(format!("failed to move project from {:?} to {:?}", src_path, dst_path))?;
+          let result = std::fs::create_dir_all(&dst_path)
+            .context("failed to create lost+found directory")
+            .and_then(|_| {
+              std::fs::rename(&src_path, &dst_path)
+                .context(format!("failed to move project from {:?} to {:?}", src_path, dst_path))
+            });
+
+          if let Err(e) = result {
+            eprintln!("warning: {}", e);
+          }
         }
         self.write_config().context("failed to write tree config")?;
       }
