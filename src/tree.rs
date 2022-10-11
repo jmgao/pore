@@ -849,6 +849,15 @@ impl Tree {
       }
 
       if do_project_cleanup {
+        let lost_found = self.path.join("lost+found");
+        std::fs::create_dir_all(&lost_found).context("failed to create lost+found directory")?;
+        let find_ignore = lost_found.join(".find-ignore");
+        std::fs::OpenOptions::new()
+          .write(true)
+          .create(true)
+          .open(find_ignore)
+          .context("failed to create lost+found/.find-ignore")?;
+
         let previous: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
         self.config.projects = projects.iter().map(|p| p.project_path.clone()).collect();
         let current: HashSet<String> = HashSet::from_iter(self.config.projects.iter().cloned());
