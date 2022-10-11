@@ -3,6 +3,11 @@ versions:
 - number: unreleased
   date: ""
   changes: []
+- number: 0.1.4
+  date: "2022-10-11"
+  changes:
+  - Fix deleting nested repositories.
+  - Hide lost+found from soong.
 - number: 0.1.3
   date: "2022-09-01"
   changes:
