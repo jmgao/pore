@@ -1,0 +1,57 @@
+# copy to ~/.pore.toml and modify
+
+update_check = true
+autosubmit = false
+presubmit = false
+
+[depots.android]
+# Path to store the depot.
+path = '~/.pore/android'
+
+[[remotes]]
+# The name of a remote: used in manifest config and in the actual git repos as the origin name.
+name = 'aosp'
+
+# Primary URL used to clone from this remote.
+url = 'https://android.googlesource.com/'
+
+# Other URLs that should be mapped onto this remote.
+other_urls = ['persistent-https://android.googlesource.com/']
+
+# Name of the depot in which objects from this remote should be stored.
+depot = 'android'
+
+# project_renames are used to map remotes with differing directory structures onto the same depot.
+# For example, if one remote had repositories at woodly/{foo,bar,baz} and another had
+# doodly/{foo,bar,baz}, the following could be used to store all objects at doodly/{foo,bar,baz}.
+#
+# [[remotes.project_renames]]
+# regex = '^woodly/'
+# replacement = 'doodly/'
+
+[[manifests]]
+# Name of the manifest: used in `pore clone MANIFEST[/BRANCH]`
+name = 'aosp'
+
+# Remote from which the manifest project is cloned.
+remote = 'aosp'
+
+# Name of the manifest project.
+project = 'platform/manifest'
+
+# Default branch to use when `pore clone`d without a specified branch.
+default_branch = 'master'
+
+# Default manifest file to use when `pore clone`d without a specified manifest file.
+default_manifest_file = 'default.xml'
+
+[[manifests]]
+name = 'kernel'
+remote = 'aosp'
+project = 'kernel/manifest'
+
+[parallelism]
+# Override the parallelism used for commands.
+# 0 is interpreted as $(nproc), and negative values as the lesser of $(nproc) and the value
+global = 0
+status = -16
