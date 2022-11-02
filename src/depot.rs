@@ -166,8 +166,6 @@ impl Depot {
 
     if fetch_tags {
       cmd.arg("--tags");
-    } else {
-      cmd.arg("--no-tags");
     }
 
     if let Some(depth) = depth {
@@ -177,7 +175,7 @@ impl Depot {
 
     if let Some(targets) = targets {
       for target in targets {
-        cmd.arg(&target);
+        cmd.arg(format!("+{}:refs/tags/PORE_FETCH_LAST", &target));
       }
     }
 

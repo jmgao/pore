@@ -2,7 +2,8 @@
 versions:
 - number: unreleased
   date: ""
-  changes: []
+  changes:
+  - Support manifests with projects pinned to a tag.
 - number: 0.1.4
   date: "2022-10-11"
   changes:

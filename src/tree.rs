@@ -709,29 +709,36 @@ impl Tree {
               //
               // If the repo has uncommitted changes, do a dry-run first, and give up if we have any conflicts.
               let head_detached = repo.head_detached().context("failed to check if HEAD is detached")?;
-              let current_head = repo.head().context("failed to get HEAD")?;
-              let current_head_oid = current_head.target().context("HEAD not a direct reference?")?;
+              let current_head = repo.head();
+              let current_head_oid = match current_head {
+                Ok(ref head) => Some(head.target().context("HEAD not a direct reference?")?),
+                Err(_) => None,
+              };
+
               let new_head = util::parse_revision(&repo, &remote.name, &revision).context(format!(
                 "failed to find revision to sync to (wanted {}/{} in {:?})",
                 remote.name, revision, project_path
               ))?;
 
-              if new_head.id() == current_head_oid {
+              if Some(new_head.id()) == current_head_oid {
                 // We're already at the top of tree.
               } else {
-                if detach {
-                  repo.set_head_detached(current_head_oid)?;
-                } else {
-                  // Check if the new head descends from the current one.
-                  if !repo.graph_descendant_of(new_head.id(), current_head_oid)? {
-                    let (ahead, behind) = repo.graph_ahead_behind(current_head_oid, new_head.id())?;
-                    let head_name = if head_detached {
-                      console::style("no branch".to_string()).red().to_string()
-                    } else {
-                      let head_short = current_head.shorthand().context("branch name contains invalid UTF-8")?;
-                      format!("branch {}", BRANCH_STYLE.apply_to(&head_short))
-                    };
-                    bail!("{} {}", head_name, util::ahead_behind(ahead, behind));
+                if let Some(current_head_oid) = current_head_oid {
+                  if detach {
+                    repo.set_head_detached(current_head_oid)?;
+                  } else {
+                    // Check if the new head descends from the current one.
+                    if !repo.graph_descendant_of(new_head.id(), current_head_oid)? {
+                      let (ahead, behind) = repo.graph_ahead_behind(current_head_oid, new_head.id())?;
+                      let head_name = if head_detached {
+                        console::style("no branch".to_string()).red().to_string()
+                      } else {
+                        let head = current_head.unwrap();
+                        let head_short = head.shorthand().context("branch name contains invalid UTF-8")?;
+                        format!("branch {}", BRANCH_STYLE.apply_to(&head_short))
+                      };
+                      bail!("{} {}", head_name, util::ahead_behind(ahead, behind));
+                    }
                   }
                 }
 
