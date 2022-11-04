@@ -174,8 +174,8 @@ impl Depot {
     }
 
     if let Some(targets) = targets {
-      for target in targets {
-        cmd.arg(format!("+{}:refs/tags/PORE_FETCH_LAST", &target));
+      for (i, target) in targets.iter().enumerate() {
+        cmd.arg(format!("+{}:refs/tags/PORE_FETCH_LAST_{}", &target, i));
       }
     }
 
