@@ -4,6 +4,7 @@ versions:
   date: ""
   changes:
   - Support manifests with projects pinned to a tag.
+  - Add locking to depot fetch.
 - number: 0.1.4
   date: "2022-10-11"
   changes:

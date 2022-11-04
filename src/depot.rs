@@ -16,6 +16,9 @@
 
 use std::path::{Path, PathBuf};
 
+use std::fs::File;
+use fs2::FileExt;
+
 use anyhow::{Context, Error};
 
 use super::config;
@@ -139,9 +142,11 @@ impl Depot {
     ensure!(!project.ends_with('/'), "invalid project path {}", project);
     let local_project: ProjectName = Depot::apply_project_renames(remote_config, project);
 
-    // TODO: Add locking?
     let objects_path = self.objects_mirror(&remote_config, &local_project);
     let repo_url = remote_config.url.to_owned() + &project + ".git";
+
+    let dir = File::open(&objects_path).context("failed to open directory")?;
+    dir.lock_exclusive().context("failed to lock directory")?;
 
     let objects_repo = Depot::open_or_create_bare_repo(&objects_path)?;
     if objects_repo.find_remote(&remote_config.name).is_ok() {
@@ -203,6 +208,7 @@ impl Depot {
     let refs_tags = refs_path.join("refs").join("tags");
     Depot::replace_dir(&objects_tags, &refs_tags).context("failed to replace tags")?;
 
+    dir.unlock().context("failed to unlock directory")?;
     Ok(())
   }
 
