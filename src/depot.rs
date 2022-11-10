@@ -145,6 +145,7 @@ impl Depot {
     let objects_path = self.objects_mirror(&remote_config, &local_project);
     let repo_url = remote_config.url.to_owned() + &project + ".git";
 
+    std::fs::create_dir_all(&objects_path).context("failed to create depot directory")?;
     let dir = File::open(&objects_path).context("failed to open directory")?;
     dir.lock_exclusive().context("failed to lock directory")?;
 
