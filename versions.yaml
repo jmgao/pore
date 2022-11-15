@@ -2,6 +2,9 @@
 versions:
 - number: unreleased
   date: ""
+  changes: []
+- number: 0.1.5
+  date: "2022-11-15"
   changes:
   - Support manifests with projects pinned to a tag.
   - Add locking to depot fetch.
