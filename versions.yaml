@@ -1,5 +1,9 @@
 ---
 versions:
+- number: "unreleased"
+  date: ""
+  changes:
+  - Perform `git lfs pull` after sync.
 - number: 0.1.8
   date: "2022-01-24"
   changes:

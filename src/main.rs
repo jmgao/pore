@@ -190,6 +190,10 @@ enum Commands {
     /// Defaults to all repositories in the tree if unspecified
     #[clap(verbatim_doc_comment)]
     path: Option<Vec<PathBuf>>,
+
+    /// After sync, don't pull LFS.
+    #[arg(long = "no-lfs")]
+    no_lfs: bool,
   },
 
   /// Start a branch in the current repository
@@ -464,6 +468,7 @@ fn cmd_clone(
     fetch_type,
     FetchTarget::Upstream,
     CheckoutType::Checkout,
+    false,
     false,
     false,
   )
@@ -967,6 +972,7 @@ fn main() {
           CheckoutType::NoCheckout,
           false,
           fetch_tags,
+          false,
         )
       }
       Commands::Sync {
@@ -977,6 +983,7 @@ fn main() {
         refs_only,
         tags,
         path,
+        no_lfs,
       } => {
         let fetch_type = if local { FetchType::NoFetch } else { FetchType::Fetch };
         let mut tree = Tree::find_from_path(cwd)?;
@@ -1006,6 +1013,7 @@ fn main() {
           },
           detach,
           fetch_tags,
+          no_lfs,
         )
       }
       Commands::Start { branch } => {
