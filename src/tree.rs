@@ -958,12 +958,14 @@ impl Tree {
     checkout: CheckoutType,
     detach: bool,
     fetch_tags: bool,
+    pull_lfs: bool,
+    repo_compat: bool,
   ) -> Result<i32, Error> {
     let mut ssh_masters = HashMap::new();
-    let result = self.sync_impl(
-      config,
+    let mut result = self.sync_impl(
+      config.clone(),
       pool,
-      sync_under,
+      sync_under.clone(),
       fetch_type,
       fetch_target,
       checkout,
@@ -971,6 +973,15 @@ impl Tree {
       fetch_tags,
       &mut ssh_masters,
     );
+    if pull_lfs {
+      result = self.forall(
+        config,
+        pool,
+        sync_under,
+        "test -e .lfsconfig && git lfs pull && git lfs prune",
+        repo_compat,
+      );
+    }
     for (host, child) in ssh_masters.iter_mut() {
       let mut cmd = std::process::Command::new("ssh");
       cmd.arg("-o").arg("ControlMaster no");
