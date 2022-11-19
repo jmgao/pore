@@ -54,3 +54,4 @@ tracing_facade = "0.1"
 tracing_chromium = "0.1"
 
 joinery = "3.0"
+dashmap = "5.4.0"
