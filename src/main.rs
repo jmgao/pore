@@ -597,7 +597,7 @@ fn main() {
       )
       (@arg DETACH: -d "detach projects back to manifest revision")
       (@arg REFS_ONLY: -r --("refs-only") "don't checkout, only update the refs")
-      (@arg PULL_LFS: -f --lfs "pull git LFS for all the supported repos")
+      (@arg NO_LFS: --no-lfs "after sync do not pull LFS for all the supported repos")
       (@arg FETCH_TAGS: -t --tags "fetch all remote tags")
       (@arg PATH: ...
         "path(s) beneath which repositories are synced\n\
@@ -885,7 +885,7 @@ fn main() {
           }
         };
         let refs_only = submatches.is_present("REFS_ONLY");
-        let pull_lfs = submatches.is_present("PULL_LFS");
+        let no_lfs = submatches.is_present("NO_LFS");
         tree.sync(
           Arc::clone(&config),
           &mut pool,
@@ -899,7 +899,7 @@ fn main() {
           },
           detach,
           fetch_tags,
-          pull_lfs,
+          no_lfs,
           repo_compat,
         )
       }

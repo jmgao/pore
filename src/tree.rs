@@ -958,7 +958,7 @@ impl Tree {
     checkout: CheckoutType,
     detach: bool,
     fetch_tags: bool,
-    pull_lfs: bool,
+    no_lfs: bool,
     repo_compat: bool,
   ) -> Result<i32, Error> {
     let mut ssh_masters = HashMap::new();
@@ -973,13 +973,13 @@ impl Tree {
       fetch_tags,
       &mut ssh_masters,
     );
-    if pull_lfs {
+    if !no_lfs {
       result = self.forall(
         config,
         pool,
         sync_under,
-        "test -e .lfsconfig && git lfs pull && git lfs prune",
-        repo_compat,
+        "test -e .lfsconfig && git lfs pull",
+        false,
       );
     }
     for (host, child) in ssh_masters.iter_mut() {
