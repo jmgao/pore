@@ -3,6 +3,7 @@ versions:
 - number: unreleased
   date: ""
   changes: []
+# 0.1.6 had no functional changes.
 - number: 0.1.5
   date: "2022-11-15"
   changes:
