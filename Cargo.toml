@@ -5,6 +5,7 @@ authors = ["Josh Gao <josh@jmgao.dev>"]
 edition = "2018"
 license = "Apache-2.0"
 description = "a performance oriented reimplementation of repo"
+repository = "https://github.com/jmgao/pore"
 
 [dependencies]
 lazy_static = "1.4.0"
