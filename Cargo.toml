@@ -42,7 +42,7 @@ fs2 = "0.4.3"
 
 git2 = { version = "0.14", features = ["vendored-libgit2"] }
 
-isatty = "0.1.9"
+atty = "0.2"
 reqwest = { version = "0.11.9", features = ["blocking"] }
 version-compare = "0.1.0"
 

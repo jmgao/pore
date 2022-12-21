@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Error};
+use atty::Stream;
 use joinery::Joinable;
 use progpool::{Job, Pool};
 
@@ -792,7 +793,7 @@ fn main() {
   };
   let mut pool = Pool::with_size(pool_size);
 
-  let update_checker = if config.update_check && isatty::stdout_isatty() {
+  let update_checker = if config.update_check && atty::is(Stream::Stdout) {
     Some(UpdateChecker::fetch())
   } else {
     None
