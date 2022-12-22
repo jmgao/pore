@@ -160,7 +160,6 @@ fn cmd_clone(
     false,
     false,
     false,
-    false,
   )
 }
 
@@ -856,7 +855,6 @@ fn main() {
           false,
           fetch_tags,
           false,
-          false,
         )
       }
 
@@ -900,7 +898,6 @@ fn main() {
           detach,
           fetch_tags,
           no_lfs,
-          repo_compat,
         )
       }
 

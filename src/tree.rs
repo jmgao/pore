@@ -959,7 +959,6 @@ impl Tree {
     detach: bool,
     fetch_tags: bool,
     no_lfs: bool,
-    repo_compat: bool,
   ) -> Result<i32, Error> {
     let mut ssh_masters = HashMap::new();
     let mut result = self.sync_impl(
