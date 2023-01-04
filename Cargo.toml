@@ -32,7 +32,6 @@ clap = "2.34.0"
 maplit = "1.0.2"
 
 chrono = "0.4.19"
-copy_dir = "0.1.2"
 dirs = "4.0.0"
 shellexpand = "2.1.0"
 pathdiff = "0.2.1"
@@ -54,3 +53,4 @@ tracing_facade = "0.1"
 tracing_chromium = "0.1"
 
 joinery = "3.0"
+fs_extra = "1.2.0"
