@@ -104,7 +104,9 @@ impl Depot {
     )
     .context(format!("failed to create directory {:?}", dst))?;
 
-    copy_dir::copy_dir(&src, &dst).context(format!("failed to copy directory {:?} to {:?}", src, dst))?;
+    let mut options = fs_extra::dir::CopyOptions::new();
+    options.copy_inside = true;
+    fs_extra::dir::copy(src, dst, &options).context(format!("failed to copy directory {:?} to {:?}", src, dst))?;
     Ok(())
   }
 
