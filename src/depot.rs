@@ -16,8 +16,8 @@
 
 use std::path::{Path, PathBuf};
 
-use std::fs::File;
 use fs2::FileExt;
+use std::fs::File;
 
 use anyhow::{Context, Error};
 
