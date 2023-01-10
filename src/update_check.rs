@@ -57,7 +57,7 @@ impl UpdateChecker {
 
   pub fn filter_new_versions(versions: Vec<Version>) -> Vec<Version> {
     let mut result = Vec::new();
-    let current_version = version_compare::Version::from(crate_version!());
+    let current_version = version_compare::Version::from(clap::crate_version!());
     for version in versions {
       if version.number == "unreleased" {
         continue;

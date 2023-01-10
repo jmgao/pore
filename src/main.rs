@@ -26,13 +26,7 @@ extern crate log;
 extern crate anyhow;
 
 #[macro_use]
-extern crate indoc;
-
-#[macro_use]
 extern crate serde_derive;
-
-#[macro_use]
-extern crate clap;
 
 use std::cmp;
 use std::collections::{HashMap, HashSet};
@@ -79,6 +73,318 @@ lazy_static! {
   static ref PROJECT_STYLE: console::Style = console::Style::new().bold();
 }
 
+use clap::{Parser, Subcommand};
+
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None,)]
+struct Args {
+  /// Emit Chromium trace file to TRACE_FILE
+  #[arg(short, long)]
+  trace_file: Option<PathBuf>,
+
+  /// Override default config file path (~/.pore.toml, with fallback to /etc/pore.toml)
+  #[arg(short, long)]
+  config: Option<PathBuf>,
+
+  /// Run as if started in PATH instead of the current working directory
+  #[arg(short = 'C')]
+  cwd: Option<PathBuf>,
+
+  /// Number of jobs to use at a time, defaults to CPU_COUNT.
+  #[arg(short, global = true)]
+  jobs: Option<i32>,
+
+  #[command(subcommand)]
+  command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+  /// Checkout a new tree into the current directory
+  Init {
+    /// The target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]
+    /// BRANCH defaults to master if unspecified
+    #[clap(verbatim_doc_comment)]
+    target: String,
+
+    /// Filter projects that satisfy a comma delimited list of groups
+    /// Groups can be prepended with - to specifically exclude them
+    #[arg(short, verbatim_doc_comment)]
+    group_filters: Option<String>,
+
+    /// Don't fetch; use only the local cache
+    #[arg(short)]
+    local: bool,
+  },
+
+  /// Checkout a new tree into a new directory
+  Clone {
+    /// The target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]
+    /// BRANCH defaults to master if unspecified
+    #[clap(verbatim_doc_comment)]
+    target: String,
+
+    /// The directory to create and checkout the tree into
+    /// Defaults to BRANCH if unspecified
+    #[clap(verbatim_doc_comment)]
+    directory: Option<PathBuf>,
+
+    /// Filter projects that satisfy a comma delimited list of groups
+    /// Groups can be prepended with - to specifically exclude them
+    #[arg(short, verbatim_doc_comment)]
+    group_filters: Option<String>,
+
+    /// Don't fetch; use only the local cache
+    #[arg(short)]
+    local: bool,
+  },
+
+  /// Fetch a tree's repositories without checking out
+  Fetch {
+    /// Fetch all remote refs (opposite of `repo sync -c`, which is the default behavior)
+    #[arg(short = 'a', group = "targets")]
+    fetch_all: bool,
+
+    /// Specify a branch to fetch (can be used multiple times)
+    #[arg(short, long, group = "targets")]
+    branch: Option<Vec<String>>,
+
+    /// Fetch all remote tags
+    #[arg(short, long, group = "targets")]
+    tags: bool,
+
+    /// Path(s) beneath which repositories are synced
+    /// Defaults to all repositories in the tree if unspecified
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+  },
+
+  /// Fetch and checkout a tree's repositories
+  Sync {
+    /// Don't fetch; use only the local cache
+    #[arg(short)]
+    local: bool,
+
+    /// Fetch all remote refs (opposite of `repo sync -c`, which is the default behavior)
+    #[arg(short = 'a')]
+    fetch_all: bool,
+
+    /// Specify a branch to fetch (can be used multiple times)
+    #[arg(short, long)]
+    branch: Option<Vec<String>>,
+
+    /// Detach projects back to manifest revision
+    #[arg(short)]
+    detach: bool,
+
+    /// Don't checkout, only update the refs
+    #[arg(short, long = "refs-only")]
+    refs_only: bool,
+
+    /// Fetch all remote tags
+    #[arg(short, long)]
+    tags: bool,
+
+    /// Path(s) beneath which repositories are synced
+    /// Defaults to all repositories in the tree if unspecified
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+  },
+
+  /// Start a branch in the current repository
+  Start {
+    /// Name of branch to create
+    branch: String,
+  },
+
+  /// Rebase local branch onto upstream branch
+  Rebase {
+    /// Pass --interactive to git rebase (single project only)
+    #[arg(short, long)]
+    interactive: bool,
+
+    /// Pass --autosquash to git rebase
+    #[arg(long)]
+    autosquash: bool,
+
+    /// Path(s) of the projects to rebase
+    /// Defaults to all repositories in the tree
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+  },
+
+  /// Upload patches to Gerrit
+  Upload {
+    /// Path(s) of the projects to be uploaded
+    path: Option<Vec<PathBuf>>,
+
+    /// Upload current git branch
+    #[arg(long = "cbr")]
+    current_branch: bool,
+
+    /// Skip pre-upload hooks
+    #[arg(long = "no-verify")]
+    no_verify: bool,
+
+    /// Comma separated list of reviewers
+    /// User names without a domain will be assumed to be @google.com
+    #[arg(long = "re", verbatim_doc_comment)]
+    reviewers: Option<String>,
+
+    /// Comma separated list of users to CC
+    /// User names without a domain will be assumed to be @google.com"
+    #[arg(long, verbatim_doc_comment)]
+    cc: Option<String>,
+
+    /// Upload as private change
+    #[arg(long)]
+    private: bool,
+
+    /// Upload as work in progress change
+    #[arg(long)]
+    wip: bool,
+
+    /// Use local branch name as topic
+    #[arg(short = 't')]
+    branch_name_as_topic: bool,
+
+    /// Enable autosubmit
+    #[arg(long)]
+    autosubmit: bool,
+
+    /// Do not enable autosubmit
+    #[arg(long = "no-autosubmit")]
+    no_autosubmit: bool,
+
+    /// Queue the change for presubmit
+    #[arg(long)]
+    presubmit: bool,
+
+    /// Do not queue the change for presubmit
+    #[arg(long = "no-presubmit")]
+    no_presubmit: bool,
+
+    /// Description to set for the new patch set
+    #[arg(short = 'm', long = "message")]
+    ps_description: Option<String>,
+
+    /// Don't upload; just show upload commands
+    #[arg(long = "dry-run")]
+    dry_run: bool,
+  },
+
+  /// Prune branches that have been merged
+  Prune {
+    /// Path(s) to prune
+    /// Defaults to all repositories in the tree
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+  },
+
+  /// Show working tree status across the entire tree
+  Status {
+    /// Path(s) beneath which to calculate status
+    /// Defaults to all repositories in the tree if unspecified
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+  },
+
+  /// Run a command in each project in the tree
+  #[command(after_help = "
+        Commands will be run with the current working directory inside each project,
+        and with the following environment variables defined:
+
+          $PORE_ROOT       absolute path of the root of the tree
+          $PORE_ROOT_REL   relative path from the project to the root of the tree
+          $REPO_PROJECT    name of the git repository in the remote
+          $REPO_PATH       relative path from the root of the tree to project")]
+  Forall {
+    /// Path(s) beneath which to run commands
+    /// Defaults to all repositories in the tree if unspecified
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+
+    /// Command to run
+    #[arg(short)]
+    command: String,
+  },
+
+  /// Run repo's preupload hooks
+  Preupload {
+    /// Path(s) beneath which to run preupload hooks
+    /// Defaults to all repositories in the tree if unspecified
+    #[clap(verbatim_doc_comment)]
+    path: Option<Vec<PathBuf>>,
+  },
+
+  /// Import an existing repo tree into a depot
+  Import {
+    /// Copy objects instead of hard-linking
+    #[arg(short, long)]
+    copy: bool,
+
+    /// The repo mirror to import from
+    /// Defaults to the current working directory if unspecified
+    #[clap(verbatim_doc_comment)]
+    directory: Option<PathBuf>,
+  },
+
+  /// List repositories
+  List {},
+
+  /// Find projects that were removed from the manifest
+  #[command(name = "find-deleted")]
+  FindDeleted {},
+
+  /// Generate a manifest corresponding to the current state of the tree
+  Manifest {
+    /// Write result to FILE instead of to standard output
+    #[arg(name = "FILE", short = 'o', long = "output")]
+    output: Option<PathBuf>,
+  },
+
+  /// Prints the parsed configuration file
+  Config {
+    /// Print the default configuration
+    #[arg(long)]
+    default: bool,
+  },
+
+  /// Implementation of repo info
+  Info {
+    /// Disable all remote operations
+    #[arg(short, long="local-only")]
+    local: bool,
+
+    path: Option<Vec<PathBuf>>,
+  },
+}
+
+impl std::fmt::Display for Commands {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Commands::Init { .. } => write!(f, "init"),
+      Commands::Clone { .. } => write!(f, "clone"),
+      Commands::Fetch { .. } => write!(f, "fetch"),
+      Commands::Sync { .. } => write!(f, "sync"),
+      Commands::Start { .. } => write!(f, "start"),
+      Commands::Rebase { .. } => write!(f, "rebase"),
+      Commands::Upload { .. } => write!(f, "upload"),
+      Commands::Prune { .. } => write!(f, "prune"),
+      Commands::Status { .. } => write!(f, "status"),
+      Commands::Forall { .. } => write!(f, "forall"),
+      Commands::Preupload { .. } => write!(f, "preupload"),
+      Commands::Import { .. } => write!(f, "import"),
+      Commands::List { .. } => write!(f, "list"),
+      Commands::FindDeleted { .. } => write!(f, "find-deleted"),
+      Commands::Manifest { .. } => write!(f, "manifest"),
+      Commands::Config { .. } => write!(f, "config"),
+      Commands::Info { .. } => write!(f, "info"),
+    }
+  }
+}
+
 fn parse_target(target: &str) -> Result<(String, Option<String>, Option<String>), Error> {
   let vec: Vec<&str> = target.split('/').collect();
   if vec.len() > 2 {
@@ -103,7 +409,7 @@ fn cmd_clone(
   config: Arc<Config>,
   mut pool: &mut Pool,
   target: &str,
-  directory: Option<&str>,
+  directory: Option<PathBuf>,
   group_filters: Option<&str>,
   fetch: bool,
 ) -> Result<i32, Error> {
@@ -114,7 +420,7 @@ fn cmd_clone(
   let branch = branch.as_ref().unwrap_or(&manifest_config.default_branch);
   let file = file.as_ref().unwrap_or(&manifest_config.default_manifest_file);
 
-  let tree_root = PathBuf::from(directory.unwrap_or(&branch));
+  let tree_root = directory.unwrap_or(PathBuf::from(&branch));
   if let Err(err) = std::fs::create_dir_all(&tree_root) {
     bail!("failed to create tree root {:?}: {}", tree_root, err);
   }
@@ -245,7 +551,7 @@ fn cmd_status(
   config: Arc<Config>,
   mut pool: &mut Pool,
   tree: &Tree,
-  status_under: Option<Vec<&str>>,
+  status_under: Option<Vec<PathBuf>>,
 ) -> Result<i32, Error> {
   let results = tree.status(Arc::clone(&config), &mut pool, status_under)?;
   let mut dirty = false;
@@ -289,12 +595,11 @@ fn cmd_status(
   }
 }
 
-fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<&str>, copy: bool) -> Result<i32, Error> {
-  let target_path = target_path.unwrap_or(".");
-  let target_metadata = std::fs::metadata(target_path)?;
+fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<PathBuf>, copy: bool) -> Result<i32, Error> {
+  let target_path = target_path.unwrap_or(PathBuf::from("."));
+  let target_metadata = std::fs::metadata(&target_path)?;
 
   // Make sure that we're actually in a repo tree.
-  let target_path = Path::new(target_path);
   let manifest_dir = target_path.join(".repo").join("manifests");
   let manifest_path = target_path.join(".repo").join("manifest.xml");
 
@@ -389,17 +694,6 @@ fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<&str>, c
   }
 
   Ok(0)
-}
-
-fn get_overridable_option_value(matches: &clap::ArgMatches, enabled_name: &str, disabled_name: &str) -> Option<bool> {
-  let last_enabled_index = matches.indices_of(enabled_name).map(Iterator::max);
-  let last_disabled_index = matches.indices_of(disabled_name).map(Iterator::max);
-  match (last_enabled_index, last_disabled_index) {
-    (Some(enabled), Some(disabled)) => Some(enabled > disabled),
-    (Some(_enabled), None) => Some(true),
-    (None, Some(_disabled)) => Some(false),
-    (None, None) => None,
-  }
 }
 
 // Sets GIT_TRACE2_PARENT_SID for matching multiple git traces to a single pore session
@@ -527,194 +821,9 @@ fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Er
 }
 
 fn main() {
-  let app = clap_app!(pore =>
-    (version: crate_version!())
-    (@setting SubcommandRequiredElseHelp)
-    (@setting VersionlessSubcommands)
+  let args: Args = Args::parse();
 
-    (global_setting: clap::AppSettings::ColoredHelp)
-
-    // The defaults for these have the wrong tense and capitalization.
-    // TODO: Write an upstream patch to allow overriding these in the subcommends globally.
-    (help_message: "print help message")
-    (version_message: "print version information")
-
-    (@arg CONFIG: -c --config +takes_value "override default config file path (~/.pore.toml, with fallback to /etc/pore.toml)")
-    (@arg CWD: -C +takes_value "run as if started in PATH instead of the current working directory")
-    (@arg JOBS: -j +takes_value +global "number of jobs to use at a time, defaults to CPU_COUNT.")
-    (@arg TRACE_FILE: -t --("trace_file") +takes_value "emit Chromium trace file to TRACE_FILE")
-    (@arg VERBOSE: -v ... "increase verbosity")
-
-    (@subcommand init =>
-      (about: "checkout a new tree into the current directory")
-      (@arg TARGET: +required
-        "the target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]\n\
-         BRANCH defaults to master if unspecified"
-      )
-      (@arg GROUP_FILTERS: -g +takes_value
-        "filter projects that satisfy a comma delimited list of groups\n\
-         groups can be prepended with - to specifically exclude them"
-      )
-      (@arg LOCAL: -l "don't fetch; use only the local cache")
-    )
-    (@subcommand clone =>
-      (about: "checkout a new tree into a new directory")
-      (@arg TARGET: +required
-        "the target to checkout in the format <MANIFEST>[/<BRANCH>[:MANIFEST_FILE]]\n\
-         BRANCH defaults to master if unspecified"
-      )
-      (@arg DIRECTORY:
-        "the directory to create and checkout the tree into.\n\
-         defaults to BRANCH if unspecified"
-      )
-      (@arg GROUP_FILTERS: -g +takes_value
-        "filter projects that satisfy a comma delimited list of groups\n\
-         groups can be prepended with - to specifically exclude them"
-      )
-      (@arg LOCAL: -l "don't fetch; use only the local cache")
-    )
-    (@subcommand fetch =>
-      (about: "fetch a tree's repositories without checking out")
-      (@group targets =>
-        (@arg FETCH_ALL: -a "fetch all remote refs (opposite of `repo sync -c`, which is the default behavior)")
-        (@arg BRANCH: -b --branch +takes_value +multiple number_of_values(1)
-          "specify a branch to fetch (can be used multiple times)"
-        )
-        (@arg FETCH_TAGS: -t --tags "fetch all remote tags")
-      )
-      (@arg PATH: ...
-        "path(s) beneath which repositories are synced\n\
-         defaults to all repositories in the tree if unspecified"
-      )
-    )
-    (@subcommand sync =>
-      (about: "fetch and checkout a tree's repositories")
-      (@arg LOCAL: -l "don't fetch; use only the local cache")
-      (@arg FETCH_ALL: -a "fetch all remote refs (opposite of `repo sync -c`, which is the default behavior)")
-      (@arg BRANCH: -b --branch +takes_value +multiple number_of_values(1)
-        "specify a branch to fetch (can be used multiple times)"
-      )
-      (@arg DETACH: -d "detach projects back to manifest revision")
-      (@arg REFS_ONLY: -r --("refs-only") "don't checkout, only update the refs")
-      (@arg FETCH_TAGS: -t --tags "fetch all remote tags")
-      (@arg PATH: ...
-        "path(s) beneath which repositories are synced\n\
-         defaults to all repositories in the tree if unspecified"
-      )
-    )
-    (@subcommand start =>
-      (about: "start a branch in the current repository")
-      (@arg BRANCH: +required "name of branch to create")
-    )
-    (@subcommand rebase =>
-      (about: "rebase local branch onto upstream branch")
-      (@arg INTERACTIVE: -i --interactive "pass --interactive to git rebase (single project only)")
-      (@arg AUTOSQUASH: --autosquash "pass --autosquash to git rebase")
-      (@arg PATH: ...
-        "path(s) of the projects to rebase\n\
-         defaults to all repositoriries in the tree"
-      )
-    )
-    (@subcommand upload =>
-      (about: "upload patches to Gerrit")
-      (@arg PATH: ...
-        "path(s) of the projects to be uploaded"
-      )
-      (@arg CURRENT_BRANCH: --cbr "upload current git branch")
-      (@arg NO_VERIFY: --("no-verify") "skip pre-upload hooks")
-      (@arg REVIEWERS: --re +takes_value
-        "comma separated list of reviewers\n\
-         user names without a domain will be assumed to be @google.com"
-      )
-      (@arg CC: --cc +takes_value
-        "comma separated list of users to CC\n\
-         user names without a domain will be assumed to be @google.com"
-      )
-      (@arg PRIVATE: --private "upload as private change")
-      (@arg WIP: --wip "upload as work in progress change")
-      (@arg BRANCH_NAME_AS_TOPIC: -t "use local branch name as topic")
-      (@arg AUTOSUBMIT: --autosubmit +multiple "enable autosubmit")
-      (@arg NO_AUTOSUBMIT: --("no-autosubmit") +multiple "do not enable autosubmit")
-      (@arg PRESUBMIT: --presubmit +multiple "queue the change for presubmit")
-      (@arg NO_PRESUBMIT: --("no-presubmit") +multiple "do not queue the change for presubmit")
-      (@arg PS_DESCRIPTION: -m --message +takes_value "description to set for the new patch set")
-      (@arg DRY_RUN: --("dry-run") "don't upload; just show upload commands")
-    )
-    (@subcommand prune =>
-      (about: "prune branches that have been merged")
-      (@arg PATH: ...
-         "path(s) to prune\n\
-          defaults to all repositories in the tree"
-      )
-    )
-    (@subcommand status =>
-      (about: "show working tree status across the entire tree")
-      (@arg PATH: ...
-        "path(s) beneath which to calculate status\n\
-         defaults to all repositories in the tree if unspecified"
-      )
-    )
-    (@subcommand forall =>
-      (about: "run a command in each project in the tree")
-      (after_help: indoc!("
-        Commands will be run with the current working directory inside each project,
-        and with the following environment variables defined:
-
-          $PORE_ROOT       absolute path of the root of the tree
-          $PORE_ROOT_REL   relative path from the project to the root of the tree
-          $REPO_PROJECT    name of the git repository in the remote
-          $REPO_PATH       relative path from the root of the tree to project"
-      ))
-      (@arg PATH: ...
-         "path(s) beneath which to run commands\n\
-          defaults to all repositories in the tree if unspecified"
-      )
-      (@arg COMMAND: -c +takes_value +required
-        "command to run."
-      )
-    )
-    (@subcommand preupload =>
-      (about: "run repo's preupload hooks")
-      (@arg PATH: ...
-         "path(s) beneath which to run preupload hooks\n\
-          defaults to all repositories in the tree if unspecified"
-      )
-    )
-    (@subcommand import =>
-      (about: "import an existing repo tree into a depot")
-      (@arg COPY: -c --copy "copy objects instead of hard-linking")
-      (@arg DIRECTORY:
-        "the repo mirror to import from.\n\
-         defaults to the current working directory if unspecified"
-      )
-    )
-    (@subcommand list =>
-      (about: "list repositories")
-    )
-    (@subcommand find_deleted =>
-      (name: "find-deleted")
-      (about: "find projects that were removed from the manifest")
-    )
-    (@subcommand manifest =>
-      (about: "generate a manifest corresponding to the current state of the tree")
-      (@arg OUTPUT: -o --output +takes_value value_name("FILE")
-        "write result to FILE instead of to standard output"
-      )
-    )
-    (@subcommand config =>
-      (about: "prints the parsed configuration file")
-      (@arg DEFAULT: --default "print the default configuration")
-    )
-    (@subcommand info =>
-      (about: "implementation of repo info")
-      (@arg LOCAL: -l --("local-only") "disable all remote operations")
-      (@arg PATH: ...)
-    )
-  );
-
-  let matches = app.get_matches();
-
-  if let Some(trace_file) = matches.value_of("TRACE_FILE") {
+  if let Some(trace_file) = args.trace_file {
     match std::fs::File::create(trace_file) {
       Ok(file) => {
         let tracer = tracing_chromium::Tracer::from_output(Box::new(file));
@@ -727,9 +836,9 @@ fn main() {
     }
   }
 
-  if let Some(cwd) = matches.value_of("CWD") {
+  if let Some(cwd) = args.cwd {
     if let Err(err) = std::env::set_current_dir(&cwd) {
-      fatal!("failed to set working directory to {}: {}", cwd, err);
+      fatal!("failed to set working directory to {}: {}", cwd.display(), err);
     }
   }
   let cwd = std::env::current_dir().expect("failed to get current working directory");
@@ -737,7 +846,7 @@ fn main() {
   set_trace_id();
 
   let repo_compat = std::env::args().next() == Some("repo".into());
-  let config_path = match matches.value_of("CONFIG") {
+  let config_path = match args.config {
     Some(path) => {
       info!("using provided config path {:?}", path);
       PathBuf::from(path)
@@ -757,7 +866,7 @@ fn main() {
     }
   };
 
-  let config = match config::Config::from_path(&config_path) {
+  let config = match Config::from_path(&config_path) {
     Ok(config) => Arc::new(config),
 
     Err(err) => {
@@ -765,23 +874,14 @@ fn main() {
         "warning: failed to read config file at {:?}, falling back to default config: {}",
         config_path, err,
       );
-      Arc::new(config::Config::default())
+      Arc::new(Config::default())
     }
   };
 
-  let cmd = matches.subcommand();
-  let pool_size = matches
-    .value_of("JOBS")
-    .map(|job_str| {
-      if let Ok(jobs) = job_str.parse::<i32>() {
-        jobs
-      } else {
-        fatal!("failed to parse jobs value: {}", job_str);
-      }
-    })
-    .or_else(|| {
+  let cmd = args.command;
+  let pool_size = args.jobs.or_else(|| {
       // Command-specific override
-      config.parallelism.get(cmd.0).cloned().or_else(|| {
+      config.parallelism.get(cmd.to_string().as_str()).cloned().or_else(|| {
         // Global override
         config.parallelism.get("global").cloned()
       })
@@ -792,7 +892,7 @@ fn main() {
   let pool_size = if pool_size == 0 {
     num_cpus
   } else if pool_size < 0 {
-    std::cmp::min(num_cpus, (-pool_size) as usize)
+    cmp::min(num_cpus, (-pool_size) as usize)
   } else {
     pool_size as usize
   };
@@ -804,55 +904,48 @@ fn main() {
     None
   };
 
-  let result = || -> Result<i32, Error> {
+  let command_action = || -> Result<i32, Error> {
     match cmd {
-      ("init", Some(submatches)) => {
-        let fetch = !submatches.is_present("LOCAL");
+      Commands::Init { target, group_filters, local } => {
+        let fetch = !local;
         cmd_clone(
           Arc::clone(&config),
           &mut pool,
-          &submatches.value_of("TARGET").unwrap(),
-          Some("."),
-          submatches.value_of("GROUP_FILTERS"),
+          &target,
+          Some(PathBuf::from(".")),
+          group_filters.as_deref(),
           fetch,
         )
       }
-
-      ("clone", Some(submatches)) => {
-        let fetch = !submatches.is_present("LOCAL");
+      Commands::Clone { target, directory, group_filters, local,  } => {
+        let fetch = !local;
         cmd_clone(
           Arc::clone(&config),
           &mut pool,
-          &submatches.value_of("TARGET").unwrap(),
-          submatches.value_of("DIRECTORY"),
-          submatches.value_of("GROUP_FILTERS"),
+          target.as_str(),
+          directory,
+          group_filters.as_deref(),
           fetch,
         )
       }
-
-      ("fetch", Some(submatches)) => {
+      Commands::Fetch { fetch_all, branch, tags, path } => {
         let mut tree = Tree::find_from_path(cwd)?;
-        let fetch_under = submatches.values_of("PATH").map(Iterator::collect);
-
-        let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
-        let fetch_all = submatches.is_present("FETCH_ALL");
-        let fetch_tags = submatches.is_present("FETCH_TAGS") || fetch_all;
+        let fetch_tags = tags || fetch_all;
 
         let fetch_target = {
           if fetch_all {
             FetchTarget::All
-          } else if branches.is_none() {
-            FetchTarget::Upstream
+          } else if let Some(branches) = branch {
+            FetchTarget::Specific(branches.into_iter().collect())
           } else {
-            let branches = branches.unwrap().iter().map(|s| s.to_string()).collect();
-            FetchTarget::Specific(branches)
+            FetchTarget::Upstream
           }
         };
 
         tree.sync(
           Arc::clone(&config),
           &mut pool,
-          fetch_under,
+          path,
           FetchType::Fetch,
           fetch_target,
           CheckoutType::NoCheckout,
@@ -860,36 +953,30 @@ fn main() {
           fetch_tags,
         )
       }
-
-      ("sync", Some(submatches)) => {
-        let fetch_type = if submatches.is_present("LOCAL") {
+      Commands::Sync { local, fetch_all, branch, detach, refs_only, tags, path } => {
+        let fetch_type = if local {
           FetchType::NoFetch
         } else {
           FetchType::Fetch
         };
         let mut tree = Tree::find_from_path(cwd)?;
-        let sync_under = submatches.values_of("PATH").map(Iterator::collect);
 
-        let branches: Option<Vec<_>> = submatches.values_of("BRANCH").map(Iterator::collect);
-        let detach = submatches.is_present("DETACH");
-        let fetch_all = submatches.is_present("FETCH_ALL");
-        let fetch_tags = submatches.is_present("FETCH_TAGS") || fetch_all;
+        let fetch_tags = tags || fetch_all;
 
         let fetch_target = {
           if fetch_all {
             FetchTarget::All
-          } else if branches.is_none() {
+          } else if branch.is_none() {
             FetchTarget::Upstream
           } else {
-            let branches = branches.unwrap().iter().map(|s| s.to_string()).collect();
+            let branches = branch.unwrap().iter().map(|s| s.to_string()).collect();
             FetchTarget::Specific(branches)
           }
         };
-        let refs_only = submatches.is_present("REFS_ONLY");
         tree.sync(
           Arc::clone(&config),
           &mut pool,
-          sync_under,
+          path,
           fetch_type,
           fetch_target,
           if refs_only {
@@ -901,150 +988,138 @@ fn main() {
           fetch_tags,
         )
       }
-
-      ("start", Some(submatches)) => {
+      Commands::Start { branch } => {
         let tree = Tree::find_from_path(cwd.clone())?;
-        let branch_name = submatches.value_of("BRANCH").unwrap();
 
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
 
-        tree.start(Arc::clone(&config), &depot, branch_name, &cwd)
+        tree.start(Arc::clone(&config), &depot, branch, &cwd)
       }
-
-      ("upload", Some(submatches)) => {
+      Commands::Rebase { interactive, autosquash, path } => {
         let tree = Tree::find_from_path(cwd)?;
-        let autosubmit = get_overridable_option_value(&submatches, "AUTOSUBMIT", "NO_AUTOSUBMIT");
-        let presubmit = get_overridable_option_value(&submatches, "PRESUBMIT", "NO_PRESUBMIT");
+        tree.rebase(config, &mut pool, interactive, autosquash, path)
+
+      }
+      Commands::Upload { path, current_branch, no_verify, reviewers, cc, private, wip, branch_name_as_topic, autosubmit, no_autosubmit, presubmit, no_presubmit, ps_description, dry_run } => {
+        let tree = Tree::find_from_path(cwd)?;
+        let autosubmit_upload = if autosubmit {
+          true
+        } else if no_autosubmit {
+          false
+        } else {
+          config.autosubmit
+        };
+
+        let presubmit_upload = if presubmit {
+          true
+        } else if no_presubmit {
+          false
+        } else {
+          config.presubmit
+        };
 
         fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
           users
-            .unwrap_or("")
-            .split(',')
-            .filter(|r| !r.is_empty())
-            .map(|r| {
-              if r.contains('@') {
-                r.to_string()
-              } else {
-                format!("{}@google.com", r)
-              }
-            })
-            .collect()
+              .unwrap_or("")
+              .split(',')
+              .filter(|r| !r.is_empty())
+              .map(|r| {
+                if r.contains('@') {
+                  r.to_string()
+                } else {
+                  format!("{}@google.com", r)
+                }
+              })
+              .collect()
         }
 
         tree.upload(
           Arc::clone(&config),
           &mut pool,
-          submatches.values_of("PATH").map(Iterator::collect),
-          submatches.is_present("CURRENT_BRANCH"),
-          submatches.is_present("NO_VERIFY"),
-          &user_string_to_vec(submatches.value_of("REVIEWERS")),
-          &user_string_to_vec(submatches.value_of("CC")),
-          submatches.is_present("PRIVATE"),
-          submatches.is_present("WIP"),
-          submatches.is_present("BRANCH_NAME_AS_TOPIC"),
-          autosubmit.unwrap_or(config.autosubmit),
-          presubmit.unwrap_or(config.presubmit),
-          submatches.value_of("PS_DESCRIPTION"),
-          submatches.is_present("DRY_RUN"),
+          path,
+          current_branch,
+          no_verify,
+          &user_string_to_vec(reviewers.as_deref()),
+          &user_string_to_vec(cc.as_deref()),
+          private,
+          wip,
+          branch_name_as_topic,
+          autosubmit_upload,
+          presubmit_upload,
+          ps_description.as_deref(),
+          dry_run,
         )
       }
-
-      ("prune", Some(submatches)) => {
+      Commands::Prune { path } => {
         let tree = Tree::find_from_path(cwd)?;
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
 
-        let prune_under = submatches.values_of("PATH").map(Iterator::collect);
-        tree.prune(config, &mut pool, &depot, prune_under)
+        tree.prune(config, &mut pool, &depot, path)
       }
-
-      ("rebase", Some(submatches)) => {
+      Commands::Status { path } => {
         let tree = Tree::find_from_path(cwd)?;
-        let interactive = submatches.is_present("INTERACTIVE");
-        let autosquash = submatches.is_present("AUTOSQUASH");
-        let rebase_under = submatches.values_of("PATH").map(Iterator::collect);
-        tree.rebase(config, &mut pool, interactive, autosquash, rebase_under)
+        cmd_status(Arc::clone(&config), &mut pool, &tree, path)
       }
-
-      ("status", Some(submatches)) => {
+      Commands::Forall { path, command } => {
         let tree = Tree::find_from_path(cwd)?;
-        let status_under = submatches.values_of("PATH").map(Iterator::collect);
-        cmd_status(Arc::clone(&config), &mut pool, &tree, status_under)
-      }
+        let command = command;
 
-      ("manifest", Some(submatches)) => {
-        let output = submatches.value_of("OUTPUT");
+        tree.forall(Arc::clone(&config), &mut pool, path, command.as_str(), repo_compat)
+      }
+      Commands::Preupload { path } => {
         let tree = Tree::find_from_path(cwd)?;
-        tree.generate_manifest(Arc::clone(&config), &mut pool, output)
+        tree.preupload(config, &mut pool, path)
+
       }
-
-      ("forall", Some(submatches)) => {
-        let tree = Tree::find_from_path(cwd)?;
-        let forall_under = submatches.values_of("PATH").map(Iterator::collect);
-        let command = submatches
-          .value_of("COMMAND")
-          .ok_or_else(|| format_err!("no commands specified"))?;
-
-        tree.forall(Arc::clone(&config), &mut pool, forall_under, command, repo_compat)
-      }
-
-      ("preupload", Some(submatches)) => {
-        let tree = Tree::find_from_path(cwd)?;
-        let preupload_under = submatches.values_of("PATH").map(Iterator::collect);
-        tree.preupload(config, &mut pool, preupload_under)
-      }
-
-      ("import", Some(submatches)) => cmd_import(
+      Commands::Import { copy, directory } => cmd_import(
         config,
         &mut pool,
-        submatches.value_of("DIRECTORY"),
-        submatches.is_present("COPY"),
+        directory,
+        copy,
       ),
-
-      ("list", Some(_submatches)) => {
+      Commands::List { } => {
         let tree = Tree::find_from_path(cwd)?;
         tree.list(config)
       }
-
-      ("find-deleted", Some(_submatches)) => {
+      Commands::FindDeleted { } => {
         let tree = Tree::find_from_path(cwd)?;
         tree.find_deleted(config, &mut pool)
       }
-
-      ("config", Some(submatches)) => {
-        if submatches.is_present("DEFAULT") {
+      Commands::Manifest { output } => {
+        let tree = Tree::find_from_path(cwd)?;
+        tree.generate_manifest(Arc::clone(&config), &mut pool, output)
+      }
+      Commands::Config { default } => {
+        if default {
           println!("{}", Config::default_string());
         } else {
           println!("{}", toml::to_string_pretty(config.as_ref())?);
         }
         Ok(0)
       }
-
-      ("info", Some(submatches)) => {
+      Commands::Info { path, .. } => {
         let tree = Tree::find_from_path(cwd)?;
-        let paths = if let Some(paths) = submatches.values_of("PATH") {
-          paths.map(Path::new).collect::<Vec<&Path>>()
-        } else {
-          Vec::new()
+        let paths_vec= match &path {
+          None => Vec::new(),
+          Some(paths) => {
+            paths.iter().map(PathBuf::as_path).collect()
+          }
         };
-        cmd_info(config, &tree, &paths)
-      }
-
-      _ => {
-        unreachable!();
+        cmd_info(config, &tree, &paths_vec)
       }
     }
-  }();
+  };
 
   if let Some(u) = update_checker {
     u.finish();
   }
 
-  match result {
+  match command_action() {
     Ok(rc) => std::process::exit(rc),
     Err(err) => {
-      writeln!(&mut ::std::io::stderr(), "fatal: {:#}", err).unwrap();
+      writeln!(&mut std::io::stderr(), "fatal: {:#}", err).unwrap();
     }
   }
 }

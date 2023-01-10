@@ -514,7 +514,7 @@ impl Tree {
     &self,
     config: Arc<Config>,
     manifest: &Manifest,
-    under: Option<Vec<&str>>,
+    under: Option<Vec<PathBuf>>,
   ) -> Result<Vec<ProjectInfo>, Error> {
     let default_revision = manifest
       .default
@@ -530,10 +530,10 @@ impl Tree {
     let mut paths = Vec::new();
     for path in under.unwrap_or_default() {
       let requested_path =
-        std::fs::canonicalize(&path).context(format!("failed to canonicalize requested path '{}'", path))?;
+        std::fs::canonicalize(&path).context(format!("failed to canonicalize requested path '{}'", path.display()))?;
       paths.push(
         pathdiff::diff_paths(&requested_path, &tree_root)
-          .ok_or_else(|| format_err!("failed to calculate path diff for {}", path))?,
+          .ok_or_else(|| format_err!("failed to calculate path diff for {}", path.display()))?,
       );
     }
 
@@ -952,7 +952,7 @@ impl Tree {
     &mut self,
     config: Arc<Config>,
     pool: &mut Pool,
-    sync_under: Option<Vec<&str>>,
+    sync_under: Option<Vec<PathBuf>>,
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
@@ -987,7 +987,7 @@ impl Tree {
     &mut self,
     config: Arc<Config>,
     mut pool: &mut Pool,
-    sync_under: Option<Vec<&str>>,
+    sync_under: Option<Vec<PathBuf>>,
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
@@ -1049,7 +1049,7 @@ impl Tree {
     &self,
     config: Arc<Config>,
     pool: &mut Pool,
-    status_under: Option<Vec<&str>>,
+    status_under: Option<Vec<PathBuf>>,
   ) -> Result<ExecutionResults<ProjectStatus, Error>, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(config, &manifest, status_under)?;
@@ -1144,7 +1144,7 @@ impl Tree {
     Ok(pool.execute(job))
   }
 
-  pub fn start(&self, config: Arc<Config>, _depot: &Depot, branch_name: &str, directory: &Path) -> Result<i32, Error> {
+  pub fn start(&self, config: Arc<Config>, _depot: &Depot, branch_name: String, directory: &Path) -> Result<i32, Error> {
     let flags = git2::RepositoryOpenFlags::empty();
     let repo = git2::Repository::open_ext(&directory, flags, &self.path).context("failed to find git repository")?;
 
@@ -1193,7 +1193,7 @@ impl Tree {
     &self,
     config: Arc<Config>,
     pool: &mut Pool,
-    upload_under: Option<Vec<&str>>,
+    upload_under: Option<Vec<PathBuf>>,
     current_branch: bool,
     no_verify: bool,
     reviewers: &[String],
@@ -1346,7 +1346,7 @@ impl Tree {
     config: Arc<Config>,
     pool: &mut Pool,
     depot: &Depot,
-    prune_under: Option<Vec<&str>>,
+    prune_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, prune_under)?;
@@ -1449,7 +1449,7 @@ impl Tree {
     pool: &mut Pool,
     interactive: bool,
     autosquash: bool,
-    rebase_under: Option<Vec<&str>>,
+    rebase_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(config, &manifest, rebase_under)?;
@@ -1586,7 +1586,7 @@ impl Tree {
     &self,
     config: Arc<Config>,
     pool: &mut Pool,
-    forall_under: Option<Vec<&str>>,
+    forall_under: Option<Vec<PathBuf>>,
     command: &str,
     repo_compat: bool,
   ) -> Result<i32, Error> {
@@ -1668,7 +1668,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn preupload(&self, config: Arc<Config>, pool: &mut Pool, under: Option<Vec<&str>>) -> Result<i32, Error> {
+  pub fn preupload(&self, config: Arc<Config>, pool: &mut Pool, under: Option<Vec<PathBuf>>) -> Result<i32, Error> {
     let manifest = self.read_manifest().context("failed to read manifest")?;
     let projects = self
       .collect_manifest_projects(config, &manifest, under)
@@ -1824,7 +1824,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn generate_manifest(&self, config: Arc<Config>, pool: &mut Pool, output: Option<&str>) -> Result<i32, Error> {
+  pub fn generate_manifest(&self, config: Arc<Config>, pool: &mut Pool, output: Option<PathBuf>) -> Result<i32, Error> {
     let status = self.status(config, pool, None)?;
     let mut bail = false;
     for failed in status.failed {
