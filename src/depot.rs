@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use filetime::FileTime;
 use fs2::FileExt;
 use std::fs::File;
 
@@ -93,10 +95,6 @@ impl Depot {
       return Ok(());
     }
 
-    if dst.exists() {
-      std::fs::remove_dir_all(&dst).context(format!("failed to delete {:?}", dst))?;
-    }
-
     std::fs::create_dir_all(
       dst
         .parent()
@@ -104,9 +102,61 @@ impl Depot {
     )
     .context(format!("failed to create directory {:?}", dst))?;
 
-    let mut options = fs_extra::dir::CopyOptions::new();
-    options.copy_inside = true;
-    fs_extra::dir::copy(src, dst, &options).context(format!("failed to copy directory {:?} to {:?}", src, dst))?;
+    let mut src_mtimes = HashMap::new();
+    let mut src_directories = HashSet::new();
+    let mut src_new = HashSet::new();
+
+    for src_file in std::fs::read_dir(src)? {
+      let src_file = src_file?;
+      let src_metadata = src_file.metadata()?;
+
+      if src_metadata.is_dir() {
+        src_directories.insert(src_file.file_name());
+        let dst_path = dst.join(src_file.file_name());
+
+        // TODO: Delete a file that's there if it exists.
+        std::fs::create_dir_all(&dst_path)?;
+
+        Self::replace_dir(src_file.path(), dst_path)?;
+      } else {
+        let src_mtime = FileTime::from_last_modification_time(&src_metadata);
+        src_mtimes.insert(src_file.file_name(), src_mtime);
+        src_new.insert(src_file.file_name());
+      }
+    }
+
+    for dst_file in std::fs::read_dir(dst)? {
+      let dst_file = dst_file?;
+      let dst_metadata = dst_file.metadata()?;
+      let dst_mtime = FileTime::from_last_modification_time(&dst_metadata);
+      let dst_filename = dst_file.file_name();
+      if let Some(src_mtime) = src_mtimes.get(&dst_filename) {
+        src_new.remove(&dst_filename);
+        if *src_mtime == dst_mtime {
+          continue;
+        }
+        let dst_path = dst_file.path();
+        std::fs::copy(src.join(dst_filename), &dst_path)?;
+        filetime::set_file_mtime(&dst_path, *src_mtime)?;
+      } else {
+        if dst_metadata.is_dir() {
+          if !src_directories.contains(&dst_filename) {
+            std::fs::remove_dir_all(dst_file.path())?;
+          }
+        } else {
+          std::fs::remove_file(dst_file.path())?;
+        }
+      }
+    }
+
+    for src_filename in &src_new {
+      let src_mtime = src_mtimes.get(src_filename).unwrap();
+      let src_path = src.join(&src_filename);
+      let dst_path = dst.join(&src_filename);
+      std::fs::copy(src_path, &dst_path)?;
+      filetime::set_file_mtime(&dst_path, *src_mtime)?;
+    }
+
     Ok(())
   }
 
@@ -274,6 +324,6 @@ impl Depot {
 
     let mirror_tags = mirror_path.join("refs").join("tags");
     let repo_tags = repo_path.join("refs").join("tags");
-    Depot::replace_dir(&mirror_tags, &repo_tags)
+    Depot::replace_dir(&mirror_tags, &repo_tags).context("failed to replace tags")
   }
 }

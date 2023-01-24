@@ -38,6 +38,7 @@ pathdiff = "0.2.1"
 url = "2.2.2"
 walkdir = "2.3.2"
 fs2 = "0.4.3"
+filetime = "0.2.19"
 
 git2 = { version = "0.14", features = ["vendored-libgit2"] }
 
@@ -53,4 +54,3 @@ tracing_facade = "0.1"
 tracing_chromium = "0.1"
 
 joinery = "3.0"
-fs_extra = "1.2.0"

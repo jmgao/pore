@@ -4,6 +4,7 @@ versions:
   date: ""
   changes:
   - "Attempt fallback to /etc/pore.toml if ~/.pore.toml doesn't exist."
+  - Speed up checkout step of `pore sync`.
 # 0.1.6 had no functional changes.
 - number: 0.1.5
   date: "2022-11-15"
