@@ -95,12 +95,7 @@ impl Depot {
       return Ok(());
     }
 
-    std::fs::create_dir_all(
-      dst
-        .parent()
-        .ok_or_else(|| format_err!("failed to get parent of {:?}", dst))?,
-    )
-    .context(format!("failed to create directory {:?}", dst))?;
+    std::fs::create_dir_all(dst).context(format!("failed to create directory {:?}", dst))?;
 
     let mut src_mtimes = HashMap::new();
     let mut src_directories = HashSet::new();

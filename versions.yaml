@@ -1,5 +1,9 @@
 ---
 versions:
+- number: "unreleased"
+  date: ""
+  changes:
+  - Fix checkout of new repositories.
 - number: 0.1.7
   date: "2022-01-23"
   changes:
