@@ -1,6 +1,6 @@
 ---
 versions:
-- number: 0.1.7
+- number: 0.1.8
   date: "2022-01-24"
   changes:
   - Fix checkout of new repositories.
