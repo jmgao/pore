@@ -70,6 +70,7 @@ use depot::Depot;
 use manifest::Manifest;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
 use update_check::UpdateChecker;
+use util::create_symlink;
 
 lazy_static! {
   static ref AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().green();
@@ -700,6 +701,13 @@ fn main() {
       (@arg OUTPUT: -o --output +takes_value value_name("FILE")
         "write result to FILE instead of to standard output"
       )
+      (@subcommand link =>
+        (about: "link an existing manifest as the current manifest")
+        (@arg MANIFEST:
+          "the name of the manifest file (under the manifests directory)\n\
+           defaults to 'default.xml'"
+        )
+      )
     )
     (@subcommand config =>
       (about: "prints the parsed configuration file")
@@ -973,11 +981,30 @@ fn main() {
         cmd_status(Arc::clone(&config), &mut pool, &tree, status_under)
       }
 
-      ("manifest", Some(submatches)) => {
-        let output = submatches.value_of("OUTPUT");
-        let tree = Tree::find_from_path(cwd)?;
-        tree.generate_manifest(Arc::clone(&config), &mut pool, output)
-      }
+      ("manifest", Some(submatches)) => match submatches.subcommand() {
+        ("link", Some(link_args)) => {
+          let manifest_name = link_args.value_of("MANIFEST").unwrap();
+          let tree_root = cwd;
+          let pore_path = tree_root.join(".pore");
+          let manifest_symlink = pore_path.join("manifest.xml");
+          let manifest_file = pore_path.join("manifest").join(manifest_name);
+
+          if let Err(err) = std::fs::remove_file(manifest_symlink) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+              return Err(err.into());
+            }
+          }
+
+          create_symlink(manifest_file, pore_path.join("manifest.xml"))
+            .context("failed to create manifest symlink")
+            .map(|_| 0)
+        }
+        _ => {
+          let output = submatches.value_of("OUTPUT");
+          let tree = Tree::find_from_path(cwd)?;
+          tree.generate_manifest(Arc::clone(&config), &mut pool, output)
+        }
+      },
 
       ("forall", Some(submatches)) => {
         let tree = Tree::find_from_path(cwd)?;
