@@ -354,7 +354,7 @@ enum Commands {
   /// Implementation of repo info
   Info {
     /// Disable all remote operations
-    #[arg(short, long="local-only")]
+    #[arg(short, long = "local-only")]
     local: bool,
 
     path: Option<Vec<PathBuf>>,
@@ -879,7 +879,9 @@ fn main() {
   };
 
   let cmd = args.command;
-  let pool_size = args.jobs.or_else(|| {
+  let pool_size = args
+    .jobs
+    .or_else(|| {
       // Command-specific override
       config.parallelism.get(cmd.to_string().as_str()).cloned().or_else(|| {
         // Global override
@@ -906,7 +908,11 @@ fn main() {
 
   let command_action = || -> Result<i32, Error> {
     match cmd {
-      Commands::Init { target, group_filters, local } => {
+      Commands::Init {
+        target,
+        group_filters,
+        local,
+      } => {
         let fetch = !local;
         cmd_clone(
           Arc::clone(&config),
@@ -917,7 +923,12 @@ fn main() {
           fetch,
         )
       }
-      Commands::Clone { target, directory, group_filters, local,  } => {
+      Commands::Clone {
+        target,
+        directory,
+        group_filters,
+        local,
+      } => {
         let fetch = !local;
         cmd_clone(
           Arc::clone(&config),
@@ -928,7 +939,12 @@ fn main() {
           fetch,
         )
       }
-      Commands::Fetch { fetch_all, branch, tags, path } => {
+      Commands::Fetch {
+        fetch_all,
+        branch,
+        tags,
+        path,
+      } => {
         let mut tree = Tree::find_from_path(cwd)?;
         let fetch_tags = tags || fetch_all;
 
@@ -953,12 +969,16 @@ fn main() {
           fetch_tags,
         )
       }
-      Commands::Sync { local, fetch_all, branch, detach, refs_only, tags, path } => {
-        let fetch_type = if local {
-          FetchType::NoFetch
-        } else {
-          FetchType::Fetch
-        };
+      Commands::Sync {
+        local,
+        fetch_all,
+        branch,
+        detach,
+        refs_only,
+        tags,
+        path,
+      } => {
+        let fetch_type = if local { FetchType::NoFetch } else { FetchType::Fetch };
         let mut tree = Tree::find_from_path(cwd)?;
 
         let fetch_tags = tags || fetch_all;
@@ -996,12 +1016,30 @@ fn main() {
 
         tree.start(Arc::clone(&config), &depot, branch, &cwd)
       }
-      Commands::Rebase { interactive, autosquash, path } => {
+      Commands::Rebase {
+        interactive,
+        autosquash,
+        path,
+      } => {
         let tree = Tree::find_from_path(cwd)?;
         tree.rebase(config, &mut pool, interactive, autosquash, path)
-
       }
-      Commands::Upload { path, current_branch, no_verify, reviewers, cc, private, wip, branch_name_as_topic, autosubmit, no_autosubmit, presubmit, no_presubmit, ps_description, dry_run } => {
+      Commands::Upload {
+        path,
+        current_branch,
+        no_verify,
+        reviewers,
+        cc,
+        private,
+        wip,
+        branch_name_as_topic,
+        autosubmit,
+        no_autosubmit,
+        presubmit,
+        no_presubmit,
+        ps_description,
+        dry_run,
+      } => {
         let tree = Tree::find_from_path(cwd)?;
         let autosubmit_upload = if autosubmit {
           true
@@ -1021,17 +1059,17 @@ fn main() {
 
         fn user_string_to_vec(users: Option<&str>) -> Vec<String> {
           users
-              .unwrap_or("")
-              .split(',')
-              .filter(|r| !r.is_empty())
-              .map(|r| {
-                if r.contains('@') {
-                  r.to_string()
-                } else {
-                  format!("{}@google.com", r)
-                }
-              })
-              .collect()
+            .unwrap_or("")
+            .split(',')
+            .filter(|r| !r.is_empty())
+            .map(|r| {
+              if r.contains('@') {
+                r.to_string()
+              } else {
+                format!("{}@google.com", r)
+              }
+            })
+            .collect()
         }
 
         tree.upload(
@@ -1071,19 +1109,13 @@ fn main() {
       Commands::Preupload { path } => {
         let tree = Tree::find_from_path(cwd)?;
         tree.preupload(config, &mut pool, path)
-
       }
-      Commands::Import { copy, directory } => cmd_import(
-        config,
-        &mut pool,
-        directory,
-        copy,
-      ),
-      Commands::List { } => {
+      Commands::Import { copy, directory } => cmd_import(config, &mut pool, directory, copy),
+      Commands::List {} => {
         let tree = Tree::find_from_path(cwd)?;
         tree.list(config)
       }
-      Commands::FindDeleted { } => {
+      Commands::FindDeleted {} => {
         let tree = Tree::find_from_path(cwd)?;
         tree.find_deleted(config, &mut pool)
       }
@@ -1101,11 +1133,9 @@ fn main() {
       }
       Commands::Info { path, .. } => {
         let tree = Tree::find_from_path(cwd)?;
-        let paths_vec= match &path {
+        let paths_vec = match &path {
           None => Vec::new(),
-          Some(paths) => {
-            paths.iter().map(PathBuf::as_path).collect()
-          }
+          Some(paths) => paths.iter().map(PathBuf::as_path).collect(),
         };
         cmd_info(config, &tree, &paths_vec)
       }
