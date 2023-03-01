@@ -718,21 +718,30 @@ impl Tree {
                 Err(_) => None,
               };
 
-              let new_head = util::parse_revision(&repo, &remote.name, &revision).context(format!(
-                "failed to find revision to sync to (wanted {}/{} in {:?})",
-                remote.name, revision, project_path
-              ))?;
+              let new_head = util::parse_revision(&repo, &remote.name, &revision)
+                .context(format!(
+                  "failed to find revision to sync to (wanted {}/{} in {:?})",
+                  remote.name, revision, project_path
+                ))?
+                .peel_to_commit()?;
 
               if Some(new_head.id()) == current_head_oid {
                 // We're already at the top of tree.
               } else {
                 if let Some(current_head_oid) = current_head_oid {
                   if detach {
-                    repo.set_head_detached(current_head_oid)?;
+                    repo
+                      .set_head_detached(current_head_oid)
+                      .context("failed to set HEAD detached")?;
                   } else {
                     // Check if the new head descends from the current one.
-                    if !repo.graph_descendant_of(new_head.id(), current_head_oid)? {
-                      let (ahead, behind) = repo.graph_ahead_behind(current_head_oid, new_head.id())?;
+                    if !repo
+                      .graph_descendant_of(new_head.id(), current_head_oid)
+                      .context("graph descendent of failed")?
+                    {
+                      let (ahead, behind) = repo
+                        .graph_ahead_behind(current_head_oid, new_head.id())
+                        .context("graph ahead behind failed")?;
                       let head_name = if head_detached {
                         console::style("no branch".to_string()).red().to_string()
                       } else {
@@ -746,16 +755,19 @@ impl Tree {
                 }
 
                 // Do a dry run first to look for dirty changes.
-                let probe = repo.checkout_tree(&new_head, Some(git2::build::CheckoutBuilder::new().dry_run()));
+                let probe = repo.checkout_tree(
+                  new_head.as_object(),
+                  Some(git2::build::CheckoutBuilder::new().dry_run()),
+                );
                 if let Err(err) = probe {
                   bail!(err);
                 }
 
                 repo
-                  .checkout_tree(&new_head, None)
+                  .checkout_tree(new_head.as_object(), None)
                   .context(format!("failed to checkout to {:?}", new_head))?;
                 repo
-                  .reset(&new_head, git2::ResetType::Soft, None)
+                  .reset(new_head.as_object(), git2::ResetType::Soft, None)
                   .context(format!("failed to move HEAD to {:?}", new_head))?;
               }
             } else {

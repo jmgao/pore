@@ -4,6 +4,7 @@ versions:
   date: ""
   changes:
   - Perform `git lfs pull` after sync.
+  - Partially fix checking out from a manifest tag.
 - number: 0.1.8
   date: "2022-01-24"
   changes:
