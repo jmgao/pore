@@ -75,7 +75,6 @@ lazy_static! {
 
 use clap::{Parser, Subcommand};
 
-/// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None,)]
 struct Args {
