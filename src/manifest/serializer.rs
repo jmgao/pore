@@ -52,6 +52,7 @@ pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), 
 
   for project in manifest.projects.values() {
     let mut elem = Element::builder("project");
+    populate_from_option!(elem, Some(&project.name), "name");
     populate_from_option!(elem, project.path, "path");
     populate_from_option!(elem, project.remote, "remote");
     populate_from_option!(elem, project.revision, "revision");
