@@ -199,6 +199,10 @@ enum Commands {
   Start {
     /// Name of branch to create
     branch: String,
+
+    /// Point branch at this revision instead of upstream
+    #[arg(short, long,visible_alias = "rev")]
+    revision: Option<String>,
   },
 
   /// Rebase local branch onto upstream branch
@@ -1015,13 +1019,13 @@ fn main() {
           no_lfs,
         )
       }
-      Commands::Start { branch } => {
+      Commands::Start { branch, revision } => {
         let tree = Tree::find_from_path(cwd.clone())?;
 
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
 
-        tree.start(Arc::clone(&config), &depot, branch, &cwd)
+        tree.start(Arc::clone(&config), &depot, branch, revision, &cwd)
       }
       Commands::Rebase {
         interactive,

@@ -1206,6 +1206,7 @@ impl Tree {
     config: Arc<Config>,
     _depot: &Depot,
     branch_name: String,
+    revision: Option<String>,
     directory: &Path,
   ) -> Result<i32, Error> {
     let flags = git2::RepositoryOpenFlags::empty();
@@ -1232,16 +1233,16 @@ impl Tree {
       .get(project_path)
       .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
 
-    let revision = project.find_revision(&manifest)?;
+    let upstream = project.find_revision(&manifest)?;
     let (remote, _remote_config) = manifest.resolve_project_remote(&config, &self.config, project)?;
-    let object = util::parse_revision(&repo, &remote, &revision)?;
+    let object = util::parse_revision(&repo, &remote, revision.as_ref().unwrap_or(&upstream))?;
     let commit = object.peel_to_commit().context("failed to peel object to commit")?;
 
     let mut branch = repo
       .branch(&branch_name, &commit, false)
       .context(format!("failed to create branch {}", branch_name))?;
     branch
-      .set_upstream(Some(&format!("{}/{}", remote, revision)))
+      .set_upstream(Some(&format!("{}/{}", remote, upstream)))
       .context("failed to set branch upstream")?;
 
     repo.checkout_tree(&object, None)?;
