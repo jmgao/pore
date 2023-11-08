@@ -295,6 +295,10 @@ enum Commands {
     /// Defaults to all repositories in the tree if unspecified
     #[clap(verbatim_doc_comment)]
     path: Option<Vec<PathBuf>>,
+
+    /// Suppress output
+    #[arg(long, short)]
+    quiet: bool,
   },
 
   /// Run a command in each project in the tree
@@ -566,7 +570,10 @@ fn cmd_status(
   mut pool: &mut Pool,
   tree: &Tree,
   status_under: Option<Vec<PathBuf>>,
+  quiet: bool,
 ) -> Result<i32, Error> {
+  pool.quiet(quiet);
+
   let results = tree.status(Arc::clone(&config), &mut pool, status_under)?;
   let mut status = 0;
 
@@ -583,6 +590,12 @@ fn cmd_status(
       console::Alignment::Left,
       None,
     );
+
+    if quiet {
+      println!("{}", project_column);
+      continue;
+    }
+
     let branch_column = console::pad_str(
       project.branch.as_str(),
       display_data.max_branch_length + column_padding,
@@ -1111,9 +1124,9 @@ fn main() {
 
         tree.prune(config, &mut pool, &depot, path)
       }
-      Commands::Status { path } => {
+      Commands::Status { path, quiet } => {
         let tree = Tree::find_from_path(cwd)?;
-        cmd_status(Arc::clone(&config), &mut pool, &tree, path)
+        cmd_status(Arc::clone(&config), &mut pool, &tree, path, quiet)
       }
       Commands::Forall { path, command } => {
         let tree = Tree::find_from_path(cwd)?;
