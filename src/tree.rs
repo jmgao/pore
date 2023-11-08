@@ -1913,7 +1913,7 @@ impl Tree {
           PROJECT_STYLE.apply_to(&project_name)
         );
       }
-      let mut manifest_project = manifest
+      let manifest_project = manifest
         .projects
         .iter_mut()
         .find(|(_k, v)| v.path.as_ref() == Some(&project_name))
