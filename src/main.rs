@@ -201,7 +201,7 @@ enum Commands {
     branch: String,
 
     /// Point branch at this revision instead of upstream
-    #[arg(short, long,visible_alias = "rev")]
+    #[arg(short, long, visible_alias = "rev")]
     revision: Option<String>,
   },
 
