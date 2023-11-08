@@ -482,6 +482,7 @@ struct ProjectStatusDisplayData {
   branch: String,
   top_commit: String,
   files: Vec<String>,
+  dirty: bool,
 }
 
 impl ProjectStatusDisplayData {
@@ -491,26 +492,31 @@ impl ProjectStatusDisplayData {
       None => console::style("no branch".to_string()).red(),
     };
 
+    let files: Vec<_> = status
+      .files
+      .iter()
+      .map(|file| {
+        let index = file.index.to_char().to_uppercase().to_string();
+        let worktree = file.worktree.to_char();
+        let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
+        if file.worktree != FileState::Unchanged {
+          line = line.red();
+        } else {
+          line = line.green();
+        }
+
+        line.to_string()
+      })
+      .collect();
+
+    let dirty = status.branch.is_none() || !files.is_empty();
+
     ProjectStatusDisplayData {
       location: PROJECT_STYLE.apply_to(format!("project {}", status.path)).to_string(),
       branch: format!("{}{}", branch, util::ahead_behind(status.ahead, status.behind)),
       top_commit: status.commit_summary.clone().unwrap_or_default(),
-      files: status
-        .files
-        .iter()
-        .map(|file| {
-          let index = file.index.to_char().to_uppercase().to_string();
-          let worktree = file.worktree.to_char();
-          let mut line = console::style(format!(" {}{}     {}", index, worktree, file.filename));
-          if file.worktree != FileState::Unchanged {
-            line = line.red();
-          } else {
-            line = line.green();
-          }
-
-          line.to_string()
-        })
-        .collect(),
+      files,
+      dirty,
     }
   }
 }
@@ -562,12 +568,14 @@ fn cmd_status(
   status_under: Option<Vec<PathBuf>>,
 ) -> Result<i32, Error> {
   let results = tree.status(Arc::clone(&config), &mut pool, status_under)?;
-  let mut dirty = false;
+  let mut status = 0;
 
   let column_padding = 4;
   let display_data = TreeStatusDisplayData::from_results(results.successful.iter().map(|r| &r.result).collect());
   for project in display_data.projects {
-    dirty = true;
+    if project.dirty {
+      status += 1;
+    }
 
     let project_column = console::pad_str(
       project.location.as_str(),
@@ -596,11 +604,7 @@ fn cmd_status(
     bail!("failed to git status");
   }
 
-  if dirty {
-    Ok(1)
-  } else {
-    Ok(0)
-  }
+  Ok(status)
 }
 
 fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<PathBuf>, copy: bool) -> Result<i32, Error> {
