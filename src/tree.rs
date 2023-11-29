@@ -997,6 +997,13 @@ impl Tree {
       "#!/bin/bash\nexec -a repo pore \"${@}\"\n",
     )?;
 
+    // Also write a main.py to the directory so that a bare `repo` can use it.
+    self.write_hook(
+      &repo_bin_dir.as_path(),
+      "main.py",
+      include_str!("repo_main_trampoline.py"),
+    )?;
+
     Ok(())
   }
 
