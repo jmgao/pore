@@ -203,6 +203,10 @@ enum Commands {
     /// Point branch at this revision instead of upstream
     #[arg(short, long, visible_alias = "rev")]
     revision: Option<String>,
+
+    /// Path to the project to start a branch in. If omitted, the current
+    /// directory will be used.
+    path: Option<PathBuf>,
   },
 
   /// Rebase local branch onto upstream branch
@@ -1036,13 +1040,13 @@ fn main() {
           no_lfs,
         )
       }
-      Commands::Start { branch, revision } => {
+      Commands::Start { branch, revision, path } => {
         let tree = Tree::find_from_path(cwd.clone())?;
 
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
 
-        tree.start(Arc::clone(&config), &depot, branch, revision, &cwd)
+        tree.start(Arc::clone(&config), &depot, branch, revision, &path.unwrap_or(cwd))
       }
       Commands::Rebase {
         interactive,
