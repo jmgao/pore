@@ -73,7 +73,7 @@ pub struct ContactInfo {
   pub bug_url: String,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct Project {
   pub name: String,
   pub path: Option<String>,
@@ -137,6 +137,44 @@ impl Project {
       .context(format!("project {} has no dest_branch or revision", self.name))?;
 
     Ok(dest_branch)
+  }
+}
+
+#[derive(Default, Debug)]
+pub struct ExtendProject {
+  pub name: String,
+  pub path: Option<String>,
+  pub groups: Option<Vec<String>>,
+  pub revision: Option<String>,
+  pub remote: Option<String>,
+}
+
+impl ExtendProject {
+  pub fn extend(&self, project: &Project) -> Project {
+    // Limit changes to projects at the specified path
+    if let Some(path) = &self.path {
+      if *path != project.path() {
+        return project.clone();
+      }
+    }
+
+    let mut extended = project.clone();
+
+    if let Some(groups) = &self.groups {
+      let mut old_groups = project.groups.clone().unwrap_or_default();
+      old_groups.extend(groups.clone());
+      extended.groups = Some(old_groups);
+    }
+
+    if let Some(revision) = &self.revision {
+      extended.revision = Some(revision.clone());
+    }
+
+    if let Some(remote) = &self.remote {
+      extended.remote = Some(remote.clone());
+    }
+
+    extended
   }
 }
 
