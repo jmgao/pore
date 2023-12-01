@@ -128,6 +128,17 @@ fn parse_manifest(
           manifest.projects.insert(path, project);
         }
 
+        b"extend-project" => {
+          let extensions = parse_extend_project(&e, reader)?;
+          let old_project = manifest.projects.values().find(|p| p.name == extensions.name);
+          if old_project.is_none() {
+            bail!("extend-project: no previous project named {}", extensions.name);
+          } else {
+            let new_project = extensions.extend(old_project.unwrap());
+            manifest.projects.insert(PathBuf::from(new_project.path()), new_project);
+          }
+        }
+
         b"remote" => {
           let remote = parse_remote(&e, &reader)?;
           if manifest.remotes.contains_key(&remote.name) {
@@ -486,6 +497,36 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
   }
 
   Ok(project)
+}
+
+fn parse_extend_project(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<ExtendProject, Error> {
+  let mut extensions = ExtendProject::default();
+  let mut name = None;
+  for attribute in event.attributes() {
+    let attribute = attribute?;
+    let mut value = attribute.unescape_and_decode_value(&reader)?;
+    match attribute.key {
+      b"name" => {
+        while value.ends_with('/') {
+          value.pop();
+        }
+        populate_option!(name, value)
+      }
+      b"path" => populate_option!(extensions.path, value),
+      b"remote" => populate_option!(extensions.remote, value),
+      b"revision" => populate_option!(extensions.revision, value),
+      b"groups" => populate_option!(extensions.groups, value.split(',').map(ToString::to_string).collect()),
+      key => eprintln!(
+        "warning: unexpected attribute in <extend-project>: {}",
+        std::str::from_utf8(key).unwrap_or("???")
+      ),
+    }
+  }
+
+  ensure!(name != None, "name not specified in <project>");
+  extensions.name = name.unwrap();
+
+  Ok(extensions)
 }
 
 fn parse_file_operation(event: &BytesStart, reader: &Reader<impl BufRead>, copy: bool) -> Result<FileOperation, Error> {
