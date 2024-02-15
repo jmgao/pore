@@ -3,6 +3,21 @@ versions:
 - number: "unreleased"
   date: ""
   changes:
+  - None so far!
+- number: 0.1.11
+  date: "2024-02-16"
+  changes:
+  - Security update for libgit2.
+  - Implement support for manifest <extend-project>.
+  - Make `pore start` more repo compatible.
+  - Add a stub repo/main.py so `repo` can run pore.
+- number: 0.1.10
+  date: "2023-11-07"
+  changes:
+  - Support `pore status -q` to suppress all output except dirty project list.
+  - Report number of dirty projects via exit code for `pore status`.
+  - Support `pore start --revision=<rev>`
+  - Fix `pore manifest` output to include project name.
   - Perform `git lfs pull` after sync.
   - Partially fix checking out from a manifest tag.
 - number: 0.1.8
