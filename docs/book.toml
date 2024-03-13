@@ -1,0 +1,5 @@
+[book]
+authors = ["Josh Gao", "Dan Albert"]
+multilingual = false
+src = "src"
+title = "pore user guide"
