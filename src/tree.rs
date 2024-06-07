@@ -620,7 +620,7 @@ impl Tree {
         };
 
         if let Ok(parsed) = Url::parse(&remote.url) {
-          if parsed.scheme() != "ssh" || true {
+          if parsed.scheme() != "ssh" {
             continue;
           }
 
