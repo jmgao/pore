@@ -323,6 +323,11 @@ enum Commands {
     /// Command to run
     #[arg(short)]
     command: String,
+
+    /// Filter projects that satisfy a comma delimited list of groups
+    /// Groups can be prepended with - to specifically exclude them
+    #[arg(short, verbatim_doc_comment)]
+    group_filters: Option<String>,
   },
 
   /// Run repo's preupload hooks
@@ -420,6 +425,21 @@ fn parse_target(target: &str) -> Result<(String, Option<String>, Option<String>)
   Ok((remote, None, None))
 }
 
+fn parse_group_filters(group_filters: &str) -> Vec<GroupFilter> {
+  let group_filters = group_filters
+    .split(',')
+    .map(|group| {
+      if group.starts_with('-') {
+        GroupFilter::Exclude(group[1..].to_string())
+      } else {
+        GroupFilter::Include(group.to_string())
+      }
+    })
+    .collect();
+
+  group_filters
+}
+
 fn cmd_clone(
   config: Arc<Config>,
   mut pool: &mut Pool,
@@ -440,19 +460,7 @@ fn cmd_clone(
     bail!("failed to create tree root {:?}: {}", tree_root, err);
   }
 
-  let group_filters = group_filters
-    .map(|s| {
-      s.split(',')
-        .map(|group| {
-          if group.starts_with('-') {
-            GroupFilter::Exclude(group[1..].to_string())
-          } else {
-            GroupFilter::Include(group.to_string())
-          }
-        })
-        .collect()
-    })
-    .unwrap_or_else(Vec::new);
+  let group_filters = group_filters.map(parse_group_filters).unwrap_or_default();
 
   // TODO: Add locking?
   let mut tree = Tree::construct(
@@ -773,7 +781,7 @@ fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Er
   println!("----------------------------");
 
   let manifest = tree.read_manifest()?;
-  let projects = tree.collect_manifest_projects(config, &manifest, None)?;
+  let projects = tree.collect_manifest_projects(config, &manifest, None, None)?;
   let selected_projects = if paths.is_empty() {
     projects
   } else {
@@ -1132,11 +1140,23 @@ fn main() {
         let tree = Tree::find_from_path(cwd)?;
         cmd_status(Arc::clone(&config), &mut pool, &tree, path, quiet)
       }
-      Commands::Forall { path, command } => {
+      Commands::Forall {
+        path,
+        command,
+        group_filters,
+      } => {
         let tree = Tree::find_from_path(cwd)?;
         let command = command;
+        let group_filters = group_filters.as_deref().map(parse_group_filters);
 
-        tree.forall(Arc::clone(&config), &mut pool, path, command.as_str(), repo_compat)
+        tree.forall(
+          Arc::clone(&config),
+          &mut pool,
+          path,
+          group_filters,
+          command.as_str(),
+          repo_compat,
+        )
       }
       Commands::Preupload { path } => {
         let tree = Tree::find_from_path(cwd)?;

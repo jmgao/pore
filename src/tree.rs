@@ -515,6 +515,7 @@ impl Tree {
     config: Arc<Config>,
     manifest: &Manifest,
     under: Option<Vec<PathBuf>>,
+    group_filters: Option<Vec<GroupFilter>>,
   ) -> Result<Vec<ProjectInfo>, Error> {
     let default_revision = manifest
       .default
@@ -522,7 +523,9 @@ impl Tree {
       .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
-    let group_filters = self.config.group_filters.as_deref().unwrap_or(&[]);
+    let group_filters = group_filters
+      .or_else(|| self.config.group_filters.clone())
+      .unwrap_or_default();
 
     // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
     // but repo doesn't handle this either.
@@ -617,7 +620,7 @@ impl Tree {
         };
 
         if let Ok(parsed) = Url::parse(&remote.url) {
-          if parsed.scheme() != "ssh" {
+          if parsed.scheme() != "ssh" || true {
             continue;
           }
 
@@ -1083,7 +1086,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone())?;
+    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone(), None)?;
     self.sync_repos(
       &mut pool,
       Arc::clone(&config),
@@ -1116,7 +1119,7 @@ impl Tree {
     status_under: Option<Vec<PathBuf>>,
   ) -> Result<ExecutionResults<ProjectStatus, Error>, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, status_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, status_under, None)?;
     let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
 
     let mut job = Job::with_name("status");
@@ -1302,7 +1305,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, upload_under)?;
+    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, upload_under, None)?;
     let mut uploads: Vec<UploadInfo> = Vec::new();
 
     for project in projects {
@@ -1420,7 +1423,7 @@ impl Tree {
     prune_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, prune_under)?;
+    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, prune_under, None)?;
 
     let mut job = Job::with_name("pruning");
     let tree_root = Arc::new(self.path.clone());
@@ -1523,7 +1526,7 @@ impl Tree {
     rebase_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, rebase_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, rebase_under, None)?;
 
     if interactive {
       ensure!(
@@ -1658,11 +1661,12 @@ impl Tree {
     config: Arc<Config>,
     pool: &mut Pool,
     forall_under: Option<Vec<PathBuf>>,
+    group_filters: Option<Vec<GroupFilter>>,
     command: &str,
     repo_compat: bool,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, forall_under)?;
+    let projects = self.collect_manifest_projects(config, &manifest, forall_under, group_filters)?;
 
     let mut job = Job::with_name("forall");
     let tree_root = Arc::new(self.path.clone());
@@ -1742,7 +1746,7 @@ impl Tree {
   pub fn preupload(&self, config: Arc<Config>, pool: &mut Pool, under: Option<Vec<PathBuf>>) -> Result<i32, Error> {
     let manifest = self.read_manifest().context("failed to read manifest")?;
     let projects = self
-      .collect_manifest_projects(config, &manifest, under)
+      .collect_manifest_projects(config, &manifest, under, None)
       .context("failed to collect manifest projects")?;
 
     let hook_project_name = match manifest.repo_hooks {
@@ -1939,7 +1943,7 @@ impl Tree {
 
   pub fn list(&self, config: Arc<Config>) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, None, None)?;
     for project in projects {
       println!("{} : {}", project.project_path, project.project_name);
     }
