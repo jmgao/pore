@@ -3,7 +3,12 @@ versions:
 - number: "unreleased"
   date: ""
   changes:
-  - Add support for groups in `pore forall`
+  - None so far!
+- number: 0.1.14
+  date: "2024-06-10"
+  changes:
+  - Add support for groups in `pore forall`.
+  - Improve `repo forall` compatibility shim output.
 - number: 0.1.11
   date: "2024-02-16"
   changes:
