@@ -3,10 +3,6 @@ versions:
 - number: "unreleased"
   date: ""
   changes:
-  - None so far!
-- number: 0.1.13
-  date: "2024-06-07"
-  changes:
   - Add support for groups in `pore forall`
 - number: 0.1.11
   date: "2024-02-16"
