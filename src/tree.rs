@@ -119,36 +119,81 @@ pub enum GroupFilter {
   Exclude(String),
 }
 
+#[derive(PartialEq)]
+enum FilterResult {
+  Unspecified,
+  Include,
+  Exclude,
+}
+
+impl FilterResult {
+  fn combine(&mut self, rhs: FilterResult) {
+    if rhs != FilterResult::Unspecified {
+      *self = rhs;
+    }
+  }
+}
+
 impl GroupFilter {
-  fn filter_project(filters: &[GroupFilter], project: &manifest::Project) -> bool {
-    let groups = project.groups.as_deref().unwrap_or(&[]);
-
-    let default = filters.is_empty()
-      || filters.iter().any(|x| match x {
-        GroupFilter::Include(group) => group == "default",
-        GroupFilter::Exclude(_) => false,
-      });
-
-    let mut included = default && !groups.iter().any(|x| x == "notdefault");
-    let mut excluded = false;
+  fn apply_filter(filters: &[GroupFilter], groups: &[String], default: FilterResult) -> FilterResult {
+    let mut result = default;
 
     for filter in filters {
       match filter {
         GroupFilter::Include(group) => {
           if groups.contains(group) {
-            included = true;
+            result = FilterResult::Include;
           }
         }
 
         GroupFilter::Exclude(group) => {
           if groups.contains(group) {
-            excluded = true;
+            result = FilterResult::Exclude;
           }
         }
       }
     }
 
-    included && !excluded
+    result
+  }
+
+  fn filter_manifest(manifest_filters: &[GroupFilter], groups: &[String]) -> FilterResult {
+    // If groups are unspecified, it defaults to including all projects that aren't marked notdefault.
+    let mut filter_result;
+    let filters;
+    if manifest_filters.is_empty() {
+      filter_result = FilterResult::Include;
+      filters = vec![GroupFilter::Exclude("notdefault".into())];
+    } else {
+      filter_result = FilterResult::Exclude;
+      filters = manifest_filters.to_vec();
+    }
+
+    filter_result.combine(GroupFilter::apply_filter(&filters, groups, FilterResult::Unspecified));
+    filter_result
+  }
+
+  fn filter_project(
+    manifest_filters: &[GroupFilter],
+    additional_filters: Option<&[GroupFilter]>,
+    project: &manifest::Project,
+  ) -> bool {
+    let groups = project.groups.as_deref().unwrap_or(&[]);
+    let mut result = GroupFilter::filter_manifest(manifest_filters, groups);
+    if result == FilterResult::Exclude {
+      // Not synced, skip.
+      return false;
+    }
+
+    if let Some(additional_filters) = additional_filters {
+      // If we're given filters, reject projects that aren't included.
+      result.combine(GroupFilter::apply_filter(
+        additional_filters,
+        groups,
+        FilterResult::Exclude,
+      ));
+    }
+    return result == FilterResult::Include;
   }
 }
 
@@ -515,7 +560,7 @@ impl Tree {
     config: Arc<Config>,
     manifest: &Manifest,
     under: Option<Vec<PathBuf>>,
-    group_filters: Option<Vec<GroupFilter>>,
+    additional_group_filters: Option<Vec<GroupFilter>>,
   ) -> Result<Vec<ProjectInfo>, Error> {
     let default_revision = manifest
       .default
@@ -523,9 +568,7 @@ impl Tree {
       .and_then(|def| def.revision.clone())
       .unwrap_or_else(|| self.config.branch.clone());
 
-    let group_filters = group_filters
-      .or_else(|| self.config.group_filters.clone())
-      .unwrap_or_default();
+    let group_filters = self.config.group_filters.as_deref().unwrap_or(&[]);
 
     // The correctness of this seems dubious if the paths are accessed via symlinks or mount points,
     // but repo doesn't handle this either.
@@ -543,7 +586,9 @@ impl Tree {
     let filtered_projects = manifest
       .projects
       .iter()
-      .filter(|(_project_path, project)| GroupFilter::filter_project(&group_filters, &project))
+      .filter(|(_project_path, project)| {
+        GroupFilter::filter_project(&group_filters, additional_group_filters.as_deref(), &project)
+      })
       .filter(|(project_path, _project)| {
         paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
       });
