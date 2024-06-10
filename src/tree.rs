@@ -1714,22 +1714,24 @@ impl Tree {
       let result = result.result;
       let display = result.output.len() != 0 || (!repo_compat && result.rc != 0);
       if display {
-        if !repo_compat {
+        let mut stdout = std::io::stdout();
+        if repo_compat {
+          stdout.write_all(&result.output)?;
+        } else {
           if result.rc == 0 {
             println!("{}", PROJECT_STYLE.apply_to(project_name));
           } else {
             println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
             rc = result.rc;
           }
-        }
-        let lines = result.output.split(|&c| c == b'\n');
-        for line in lines {
-          let mut stdout = std::io::stdout();
-          if !repo_compat {
+
+          let lines = result.output.split(|&c| c == b'\n');
+
+          for line in lines {
             stdout.write_all(b"  ")?;
+            stdout.write_all(line)?;
+            stdout.write_all(b"\n")?;
           }
-          stdout.write_all(line)?;
-          stdout.write_all(b"\n")?;
         }
       }
     }
