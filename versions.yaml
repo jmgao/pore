@@ -4,6 +4,10 @@ versions:
   date: ""
   changes:
   - None so far!
+- number: 0.1.15
+  date: "2024-06-11"
+  changes:
+  - Fix handling of non-empty manifest group filters.
 - number: 0.1.14
   date: "2024-06-10"
   changes:
