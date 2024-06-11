@@ -113,7 +113,7 @@ pub enum CheckoutType {
   NoCheckout,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GroupFilter {
   Include(String),
   Exclude(String),
@@ -160,13 +160,24 @@ impl GroupFilter {
   fn filter_manifest(manifest_filters: &[GroupFilter], groups: &[String]) -> FilterResult {
     // If groups are unspecified, it defaults to including all projects that aren't marked notdefault.
     let mut filter_result;
-    let filters;
+    let mut filters;
+
     if manifest_filters.is_empty() {
       filter_result = FilterResult::Include;
       filters = vec![GroupFilter::Exclude("notdefault".into())];
     } else {
       filter_result = FilterResult::Exclude;
-      filters = manifest_filters.to_vec();
+      filters = Vec::new();
+
+      let default = GroupFilter::Include("default".into());
+      for filter in manifest_filters {
+        if filter == &default {
+          filter_result = FilterResult::Include;
+          filters.push(GroupFilter::Exclude("notdefault".into()));
+        } else {
+          filters.push(filter.clone());
+        }
+      }
     }
 
     filter_result.combine(GroupFilter::apply_filter(&filters, groups, FilterResult::Unspecified));
