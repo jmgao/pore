@@ -1,6 +1,6 @@
 [package]
 name = "pore"
-version = "0.1.15"
+version = "0.1.16"
 authors = ["Josh Gao <josh@jmgao.dev>"]
 edition = "2018"
 license = "Apache-2.0"

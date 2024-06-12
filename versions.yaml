@@ -4,6 +4,10 @@ versions:
   date: ""
   changes:
   - None so far!
+- number: 0.1.16
+  date: "2024-06-12"
+  changes:
+  - Add REPO_REMOTE to forall environment.
 - number: 0.1.15
   date: "2024-06-11"
   changes:
