@@ -1750,6 +1750,7 @@ impl Tree {
           .env("REPO_PROJECT", project.project_name)
           .env("REPO_PATH", project.project_path)
           .env("REPO_RREV", project.revision)
+          .env("REPO_REMOTE", project.remote)
           .current_dir(&path)
           .output()?;
 
