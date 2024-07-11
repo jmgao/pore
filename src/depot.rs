@@ -238,10 +238,22 @@ impl Depot {
       format!("ssh -o 'ControlMaster no' -o 'ControlPath {}'", util::ssh_mux_path()),
     );
 
-    let git_output = cmd.output().context("failed to spawn git fetch")?;
-    if !git_output.status.success() {
-      bail!("git fetch failed: {}", String::from_utf8_lossy(&git_output.stderr));
+    const ATTEMPT_COUNT: i32 = 3;
+    let mut result = None;
+    for _ in 0..ATTEMPT_COUNT {
+      let git_output = cmd.output().context("failed to spawn git fetch")?;
+      if git_output.status.success() {
+        result = Some(Ok(git_output));
+        break;
+      }
+      result = Some(Err(git_output));
     }
+
+    let result = result.unwrap();
+    match result {
+      Ok(result) => result,
+      Err(result) => bail!("git fetch failed: {}", String::from_utf8_lossy(&result.stderr)),
+    };
 
     let refs_path = self.refs_mirror(remote_config, &local_project);
     if git2::Repository::open(&refs_path).is_err() {
