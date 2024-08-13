@@ -128,6 +128,12 @@ enum Commands {
   /// List the topic branches
   Branches {},
 
+  /// Checkout a branch for development
+  Checkout {
+    /// Specify a branch to checkout
+    branch: String,
+  },
+
   /// Checkout a new tree into a new directory
   Clone {
     /// The target to checkout in the format <REMOTE>[/<BRANCH>[:MANIFEST]]
@@ -397,6 +403,7 @@ impl std::fmt::Display for Commands {
     match self {
       Commands::Init { .. } => write!(f, "init"),
       Commands::Branches { .. } => write!(f, "branches"),
+      Commands::Checkout { .. } => write!(f, "checkout"),
       Commands::Clone { .. } => write!(f, "clone"),
       Commands::Fetch { .. } => write!(f, "fetch"),
       Commands::Sync { .. } => write!(f, "sync"),
@@ -1024,6 +1031,10 @@ fn main() {
       Commands::Branches {} => {
         let tree = Tree::find_from_path(cwd)?;
         cmd_branches(config, &mut pool, &tree)
+      }
+      Commands::Checkout { branch } => {
+        let tree = Tree::find_from_path(cwd)?;
+        tree.checkout(&config, &mut pool, &branch)
       }
       Commands::Clone {
         target,

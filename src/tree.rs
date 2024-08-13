@@ -1066,6 +1066,68 @@ impl Tree {
     Ok(())
   }
 
+  pub fn checkout(&self, config: &Config, pool: &mut Pool, target_branch: &str) -> Result<i32, Error> {
+    let projects = self.collect_manifest_projects(config, &self.read_manifest()?, None, None)?;
+
+    let mut job = Job::with_name("checkout");
+
+    for project in &projects {
+      let path = self.path.join(&project.project_path);
+      job.add_task(&project.project_path, move || -> Result<Option<&str>, Error> {
+        let repo =
+          git2::Repository::open(&path).with_context(|| format!("failed to open object repository {:?}", path))?;
+
+        let maybe_parse = match repo.revparse_ext(target_branch) {
+          Ok(result) => Ok(Some(result)),
+          Err(error) => {
+            if error.code() == git2::ErrorCode::NotFound {
+              Ok(None)
+            } else {
+              Err(error)
+            }
+          }
+        }?;
+
+        if let Some((object, reference)) = maybe_parse {
+          repo.checkout_tree(&object, None)?;
+
+          match reference {
+            Some(repo_ref) => repo.set_head(repo_ref.name().unwrap())?,
+            None => repo.set_head_detached(object.id())?,
+          }
+
+          Ok(Some(&project.project_path))
+        } else {
+          Ok(None)
+        }
+      });
+    }
+
+    let results = pool.execute(job);
+
+    if !results.failed.is_empty() {
+      for error in results.failed {
+        eprintln!("{}: {}", error.name, error.result);
+      }
+      return Ok(1);
+    }
+
+    let mut has_projects = false;
+    let checkout_projects = results.successful.into_iter().filter_map(|result| result.result);
+
+    for checkout_project in checkout_projects {
+      has_projects = true;
+      println!("Checked out {checkout_project}");
+    }
+
+    if has_projects {
+      Ok(0)
+    } else {
+      eprintln!("error: no project has branch {target_branch}");
+      Ok(1)
+    }
+  }
+
   pub fn sync(
     &mut self,
     config: &Config,
