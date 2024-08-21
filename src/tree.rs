@@ -319,6 +319,18 @@ pub struct ProjectStatus {
   pub behind: usize,
 }
 
+#[derive(Debug)]
+pub struct ProjectBranchStatus {
+  pub name: String,
+  pub branches: Vec<BranchStatus>,
+}
+
+#[derive(Debug)]
+pub struct BranchStatus {
+  pub name: String,
+  pub is_head: bool,
+}
+
 pub struct BranchInfo<'repo> {
   pub name: String,
   pub commit: git2::Commit<'repo>,
@@ -1154,6 +1166,47 @@ impl Tree {
     }
 
     Ok(0)
+  }
+
+  pub fn branches(
+    &self,
+    config: Config,
+    pool: &mut Pool,
+  ) -> Result<ExecutionResults<ProjectBranchStatus, Error>, Error> {
+    let projects = self.collect_manifest_projects(&config, &self.read_manifest()?, None, None)?;
+
+    let mut job = Job::with_name("branches");
+
+    for project in projects {
+      job.add_task(
+        project.project_path.clone(),
+        move || -> Result<ProjectBranchStatus, Error> {
+          let repo = git2::Repository::open(self.path.join(&project.project_path))
+            .with_context(|| format!("failed to open object repository {:?}", project.project_path))?;
+
+          let topic_branch_results = repo.branches(Some(git2::BranchType::Local))?;
+          let mut branches = Vec::new();
+
+          for topic_branch_result in topic_branch_results {
+            let (topic_branch, _) = topic_branch_result?;
+            branches.push(BranchStatus {
+              name: topic_branch
+                .name()?
+                .expect("Branch should have utf-8 encoded name")
+                .to_owned(),
+              is_head: topic_branch.is_head(),
+            });
+          }
+
+          Ok(ProjectBranchStatus {
+            name: project.project_name,
+            branches,
+          })
+        },
+      );
+    }
+
+    Ok(pool.execute(job))
   }
 
   pub fn status(
