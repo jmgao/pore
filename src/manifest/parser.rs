@@ -23,7 +23,7 @@ pub(crate) fn parse(directory: &Path, file: &Path) -> Result<Manifest, Error> {
 }
 
 fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<(), Error> {
-  let mut reader = Reader::from_file(&file).context(format!("failed to read manifest file {:?}", file))?;
+  let mut reader = Reader::from_file(file).context(format!("failed to read manifest file {:?}", file))?;
   reader.trim_text(true);
 
   let mut found_manifest = false;
@@ -140,18 +140,18 @@ fn parse_manifest(
         }
 
         b"remote" => {
-          let remote = parse_remote(&e, &reader)?;
+          let remote = parse_remote(&e, reader)?;
           if manifest.remotes.contains_key(&remote.name) {
             bail!("duplicate remotes with name {}", remote.name);
           }
           manifest.remotes.insert(remote.name.clone(), remote);
         }
 
-        b"default" => populate_option!(manifest.default, parse_default(&e, &reader)?),
-        b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, &reader)?),
-        b"superproject" => populate_option!(manifest.superproject, parse_superproject(&e, &reader)?),
-        b"contactinfo" => populate_option!(manifest.contactinfo, parse_contactinfo(&e, &reader)?),
-        b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, &reader)?),
+        b"default" => populate_option!(manifest.default, parse_default(&e, reader)?),
+        b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, reader)?),
+        b"superproject" => populate_option!(manifest.superproject, parse_superproject(&e, reader)?),
+        b"contactinfo" => populate_option!(manifest.contactinfo, parse_contactinfo(&e, reader)?),
+        b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, reader)?),
 
         _ => bail!(
           "unexpected empty element in <manifest>: {}",
@@ -230,7 +230,7 @@ fn parse_include(
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"name" => populate_option!(filename, value),
       key => eprintln!(
@@ -259,7 +259,7 @@ fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Rem
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"name" => populate_option!(name, value),
       b"alias" => populate_option!(remote.alias, value),
@@ -278,10 +278,8 @@ fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Rem
     }
   }
 
-  ensure!(name != None, "name not specified in <remote>");
-  ensure!(fetch != None, "fetch not specified in <remote>");
-  remote.name = name.unwrap();
-  remote.fetch = fetch.unwrap();
+  remote.name = name.ok_or_else(|| anyhow!("name not specified in <remote>"))?;
+  remote.fetch = fetch.ok_or_else(|| anyhow!("fetch not specified in <remote>"))?;
 
   Ok(remote)
 }
@@ -291,7 +289,7 @@ fn parse_default(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<De
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"revision" => populate_option!(default.revision, value),
       b"remote" => populate_option!(default.remote, value),
@@ -318,7 +316,7 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<impl BufRead>) -> R
   let mut url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"url" => populate_option!(url, value),
       key => eprintln!(
@@ -328,8 +326,9 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<impl BufRead>) -> R
     }
   }
 
-  ensure!(url != None, "url not specified in <manifest-server>");
-  Ok(ManifestServer { url: url.unwrap() })
+  Ok(ManifestServer {
+    url: url.ok_or_else(|| anyhow!("url not specified in <manifest-server>"))?,
+  })
 }
 
 fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<SuperProject, Error> {
@@ -337,7 +336,7 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
   let mut remote = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"name" => populate_option!(name, value),
       b"remote" => populate_option!(remote, value),
@@ -348,19 +347,16 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
     }
   }
 
-  ensure!(name != None, "name not specified in <superproject>");
-  ensure!(remote != None, "remote not specified in <superproject>");
-  Ok(SuperProject {
-    name: name.unwrap(),
-    remote: remote.unwrap(),
-  })
+  let name = name.ok_or_else(|| anyhow!("name not specified in <superproject>"))?;
+  let remote = remote.ok_or_else(|| anyhow!("remote not specified in <superproject>"))?;
+  Ok(SuperProject { name, remote })
 }
 
 fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<ContactInfo, Error> {
   let mut bug_url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"bugurl" => populate_option!(bug_url, value),
       key => eprintln!(
@@ -370,9 +366,8 @@ fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resul
     }
   }
 
-  ensure!(bug_url != None, "bugurl not specified in <contactinfo>");
   Ok(ContactInfo {
-    bug_url: bug_url.unwrap(),
+    bug_url: bug_url.ok_or_else(|| anyhow!("bugurl not specified in <contactinfo>"))?,
   })
 }
 
@@ -381,7 +376,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let mut value = attribute.unescape_and_decode_value(&reader)?;
+    let mut value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"name" => {
         while value.ends_with('/') {
@@ -413,8 +408,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
     }
   }
 
-  ensure!(name != None, "name not specified in <project>");
-  project.name = name.unwrap();
+  project.name = name.ok_or_else(|| anyhow!("name not specified in <project>"))?;
 
   if has_children {
     let mut buf = Vec::new();
@@ -431,12 +425,12 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
 
         Event::Empty(e) => match e.name() {
           b"copyfile" => {
-            let op = parse_file_operation(&e, &reader, true)?;
+            let op = parse_file_operation(&e, reader, true)?;
             project.file_operations.push(op);
           }
 
           b"linkfile" => {
-            let op = parse_file_operation(&e, &reader, false)?;
+            let op = parse_file_operation(&e, reader, false)?;
             project.file_operations.push(op);
           }
 
@@ -504,7 +498,7 @@ fn parse_extend_project(event: &BytesStart, reader: &Reader<impl BufRead>) -> Re
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let mut value = attribute.unescape_and_decode_value(&reader)?;
+    let mut value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"name" => {
         while value.ends_with('/') {
@@ -523,8 +517,7 @@ fn parse_extend_project(event: &BytesStart, reader: &Reader<impl BufRead>) -> Re
     }
   }
 
-  ensure!(name != None, "name not specified in <project>");
-  extensions.name = name.unwrap();
+  extensions.name = name.ok_or_else(|| anyhow!("name not specified in <project>"))?;
 
   Ok(extensions)
 }
@@ -536,7 +529,7 @@ fn parse_file_operation(event: &BytesStart, reader: &Reader<impl BufRead>, copy:
   let mut dst = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"src" => populate_option!(src, value),
       b"dest" => populate_option!(dst, value),
@@ -548,19 +541,12 @@ fn parse_file_operation(event: &BytesStart, reader: &Reader<impl BufRead>, copy:
     }
   }
 
-  ensure!(src != None, "src not specified in <{}>", op_name);
-  ensure!(dst != None, "dest not specified in <{}>", op_name);
-
+  let src = src.ok_or_else(|| anyhow!("src not specified in <{}>", op_name))?;
+  let dst = dst.ok_or_else(|| anyhow!("dest not specified in <{}>", op_name))?;
   if copy {
-    Ok(FileOperation::CopyFile {
-      src: src.unwrap(),
-      dst: dst.unwrap(),
-    })
+    Ok(FileOperation::CopyFile { src, dst })
   } else {
-    Ok(FileOperation::LinkFile {
-      src: src.unwrap(),
-      dst: dst.unwrap(),
-    })
+    Ok(FileOperation::LinkFile { src, dst })
   }
 }
 
@@ -568,7 +554,7 @@ fn parse_repo_hooks(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result
   let mut hooks = RepoHooks::default();
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(&reader)?;
+    let value = attribute.unescape_and_decode_value(reader)?;
     match attribute.key {
       b"in-project" => populate_option!(hooks.in_project, value),
       b"enabled-list" => populate_option!(hooks.enabled_list, value),

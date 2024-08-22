@@ -98,7 +98,7 @@ pub fn parse_revision<T: AsRef<str>, U: AsRef<str>>(
   // we correctly pick the remote one.
   let object = match repo.revparse_single(&format!("{}/{}", remote, revision)) {
     Ok(obj) => obj,
-    Err(_) => repo.revparse_single(&revision).context(format!(
+    Err(_) => repo.revparse_single(revision).context(format!(
       "failed to find revision {} from remote {} in {:?}",
       revision,
       remote,

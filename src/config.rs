@@ -190,7 +190,7 @@ impl Config {
 
   pub fn from_path(path: &Path) -> Result<Config, Error> {
     let mut file = String::new();
-    File::open(&path)?.read_to_string(&mut file)?;
+    File::open(path)?.read_to_string(&mut file)?;
     let config = toml::from_str(&file).context(format!("failed to parse config file {:?}", path))?;
     Ok(config)
   }

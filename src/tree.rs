@@ -204,7 +204,7 @@ impl GroupFilter {
         FilterResult::Exclude,
       ));
     }
-    return result == FilterResult::Include;
+    result == FilterResult::Include
   }
 }
 
@@ -233,12 +233,11 @@ impl<'de> serde::de::Visitor<'de> for GroupFilterVisitor {
   where
     E: serde::de::Error,
   {
-    if value.starts_with('-') {
-      let string = value[1..].to_string();
-      if string.is_empty() {
+    if let Some(value) = value.strip_prefix('-') {
+      if value.is_empty() {
         Err(E::custom("empty group name"))
       } else {
-        Ok(GroupFilter::Exclude(string))
+        Ok(GroupFilter::Exclude(value.to_string()))
       }
     } else if value.is_empty() {
       Err(E::custom("empty group name"))
@@ -310,6 +309,7 @@ pub struct FileStatus {
 
 #[derive(Debug)]
 pub struct ProjectStatus {
+  #[allow(dead_code)]
   pub name: String,
   pub path: String,
   pub branch: Option<String>,
@@ -496,14 +496,14 @@ impl Tree {
     let manifest_project = &manifest_config.project;
     if fetch {
       depot.fetch_repo(
-        &remote_config,
+        remote_config,
         manifest_project,
         Some(&[branch.to_string()]),
         false,
         None,
       )?;
     }
-    depot.clone_repo(&remote_config, manifest_project, &branch, &manifest_path)?;
+    depot.clone_repo(remote_config, manifest_project, branch, &manifest_path)?;
 
     let tree_config = TreeConfig {
       remote: remote_config.name.clone(),
@@ -549,14 +549,14 @@ impl Tree {
 
   fn write_config(&self) -> Result<(), Error> {
     let text = toml::to_string_pretty(&self.config).context("failed to serialize tree config")?;
-    Ok(std::fs::write(self.path.join(".pore").join("tree.toml"), text).context("failed to write tree config")?)
+    std::fs::write(self.path.join(".pore").join("tree.toml"), text).context("failed to write tree config")
   }
 
   fn read_config<T: AsRef<Path>>(tree_root: T) -> Result<TreeConfig, Error> {
     let tree_root: &Path = tree_root.as_ref();
     let text =
       std::fs::read_to_string(tree_root.join(".pore").join("tree.toml")).context("failed to read tree config")?;
-    Ok(toml::from_str(&text).context("failed to deserialize tree config")?)
+    toml::from_str(&text).context("failed to deserialize tree config")
   }
 
   pub fn read_manifest(&self) -> Result<Manifest, Error> {
@@ -598,7 +598,7 @@ impl Tree {
       .projects
       .iter()
       .filter(|(_project_path, project)| {
-        GroupFilter::filter_project(&group_filters, additional_group_filters.as_deref(), &project)
+        GroupFilter::filter_project(group_filters, additional_group_filters.as_deref(), project)
       })
       .filter(|(project_path, _project)| {
         paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
@@ -663,7 +663,7 @@ impl Tree {
         let local_target = target.clone().reify(&project.revision);
         fetch_projects
           .entry(key)
-          .or_insert_with(|| FetchTarget::empty())
+          .or_insert_with(FetchTarget::empty)
           .merge(&local_target);
         remote_names.insert(project.remote.clone());
       }
@@ -714,7 +714,7 @@ impl Tree {
           };
           let target = target_vec.as_deref();
           depot
-            .fetch_repo(&remote, &project_name, target, fetch_tags, None)
+            .fetch_repo(remote, &project_name, target, fetch_tags, None)
             .context(format!("failed to fetch for project {}", project_name,))?;
           Ok(())
         });
@@ -736,7 +736,7 @@ impl Tree {
 
       for project in &projects {
         let config = Arc::clone(&config);
-        let project_info = Arc::clone(&project);
+        let project_info = Arc::clone(project);
         let project_path = self.path.join(&project.project_path);
         let tree_root = Arc::clone(&tree_root);
         let lfs_projects = Arc::clone(&lfs_projects);
@@ -754,7 +754,7 @@ impl Tree {
 
           if project_path.exists() {
             depot
-              .update_remote_refs(&remote, &project_info.project_name, &project_path)
+              .update_remote_refs(remote, &project_info.project_name, &project_path)
               .context("failed to update remote refs")?;
           }
 
@@ -777,7 +777,7 @@ impl Tree {
                 Err(_) => None,
               };
 
-              let new_head = util::parse_revision(&repo, &remote.name, &revision)
+              let new_head = util::parse_revision(&repo, &remote.name, revision)
                 .context(format!(
                   "failed to find revision to sync to (wanted {}/{} in {:?})",
                   remote.name, revision, project_path
@@ -830,7 +830,7 @@ impl Tree {
                   .context(format!("failed to move HEAD to {:?}", new_head))?;
               }
             } else {
-              depot.clone_repo(&remote, &project_name, &revision, &project_path)?;
+              depot.clone_repo(remote, project_name, revision, &project_path)?;
             }
 
             if project_info.manifest_project {
@@ -896,8 +896,8 @@ impl Tree {
         // src is the target of the link/the file that is copied, and is a relative path from the project.
         // dst is the location of the link/copy that the rule creates, and is a relative path from the tree root.
         for op in &project.file_ops {
-          let src_path = self.path.join(&project.project_path).join(&op.src());
-          let dst_path = self.path.join(&op.dst());
+          let src_path = self.path.join(&project.project_path).join(op.src());
+          let dst_path = self.path.join(op.dst());
 
           let base = dst_path
             .parent()
@@ -909,13 +909,13 @@ impl Tree {
             }
           }
 
-          let _ = std::fs::create_dir_all(&base)
+          let _ = std::fs::create_dir_all(base)
             .map_err(|err| eprintln!("warning: failed to create directory {:?}: {}", &base, err));
 
           match op {
             FileOperation::LinkFile { .. } => {
               // repo makes the symlinks as relative symlinks.
-              let target = pathdiff::diff_paths(&src_path, &base)
+              let target = pathdiff::diff_paths(&src_path, base)
                 .ok_or_else(|| format_err!("failed to calculate path diff for {:?} -> {:?}", dst_path, src_path,))?;
               let _ = create_symlink(target, &dst_path)
                 .map_err(|err| eprintln!("warning: failed to create symlink at {:?}: {}", dst_path, err));
@@ -940,6 +940,7 @@ impl Tree {
         std::fs::OpenOptions::new()
           .write(true)
           .create(true)
+          .truncate(true)
           .open(find_ignore)
           .context("failed to create lost+found/.find-ignore")?;
 
@@ -1058,7 +1059,7 @@ impl Tree {
 
     // Also write a main.py to the directory so that a bare `repo` can use it.
     self.write_hook(
-      &repo_bin_dir.as_path(),
+      repo_bin_dir.as_path(),
       "main.py",
       include_str!("repo_main_trampoline.py"),
     )?;
@@ -1106,14 +1107,14 @@ impl Tree {
   fn sync_impl(
     &mut self,
     config: Arc<Config>,
-    mut pool: &mut Pool,
+    pool: &mut Pool,
     sync_under: Option<Vec<PathBuf>>,
     fetch_type: FetchType,
     fetch_target: FetchTarget,
     checkout: CheckoutType,
     detach: bool,
     fetch_tags: bool,
-    mut ssh_masters: &mut HashMap<String, std::process::Child>,
+    ssh_masters: &mut HashMap<String, std::process::Child>,
     no_lfs: bool,
   ) -> Result<i32, Error> {
     // Sync the manifest repo first.
@@ -1128,7 +1129,7 @@ impl Tree {
 
     if fetch_type != FetchType::NoFetch {
       self.sync_repos(
-        &mut pool,
+        pool,
         Arc::clone(&config),
         manifest,
         Some(FetchTarget::Upstream),
@@ -1136,7 +1137,7 @@ impl Tree {
         false,
         detach,
         fetch_tags,
-        &mut ssh_masters,
+        ssh_masters,
         no_lfs,
       )?;
     }
@@ -1144,7 +1145,7 @@ impl Tree {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone(), None)?;
     self.sync_repos(
-      &mut pool,
+      pool,
       Arc::clone(&config),
       projects,
       if fetch_type == FetchType::NoFetch {
@@ -1153,14 +1154,14 @@ impl Tree {
         Some(fetch_target)
       },
       checkout,
-      sync_under == None,
+      sync_under.is_none(),
       detach,
       fetch_tags,
-      &mut ssh_masters,
+      ssh_masters,
       no_lfs || fetch_type == FetchType::NoFetch,
     )?;
 
-    if sync_under == None {
+    if sync_under.is_none() {
       self.update_hooks()?;
       self.ensure_repo_compat()?;
     }
@@ -1182,7 +1183,7 @@ impl Tree {
     let tree_root = Arc::new(self.path.clone());
 
     for project in &projects {
-      let project = Arc::clone(&project);
+      let project = Arc::clone(project);
       let tree_root = Arc::clone(&tree_root);
       job.add_task(project.project_path.clone(), move |_| -> Result<ProjectStatus, Error> {
         let path = tree_root.join(&project.project_path);
@@ -1256,7 +1257,7 @@ impl Tree {
           path: project.project_path.clone(),
           branch,
           commit: commit.id(),
-          commit_summary: commit.summary().map_or(None, |s| Some(s.to_string())),
+          commit_summary: commit.summary().map(|s| s.to_string()),
           files,
           ahead,
           behind,
@@ -1276,7 +1277,7 @@ impl Tree {
     directory: &Path,
   ) -> Result<i32, Error> {
     let flags = git2::RepositoryOpenFlags::empty();
-    let repo = git2::Repository::open_ext(&directory, flags, &self.path).context("failed to find git repository")?;
+    let repo = git2::Repository::open_ext(directory, flags, &self.path).context("failed to find git repository")?;
 
     // Find the project path.
     let project_path =
@@ -1409,7 +1410,7 @@ impl Tree {
       let cmd = util::make_push_command(
         self.path.join(&project.project_path),
         &remote_name,
-        &dest_branch_info.name_without_remote(),
+        dest_branch_info.name_without_remote(),
         &util::UploadOptions {
           ccs,
           reviewers,
@@ -1501,8 +1502,8 @@ impl Tree {
         let remote_config = config
           .find_remote(&project.remote)
           .context(format!("failed to find remote {}", project.remote))?;
-        let local_project = Depot::apply_project_renames(&remote_config, project.project_name);
-        let obj_repo_path = depot.objects_mirror(&remote_config, &local_project);
+        let local_project = Depot::apply_project_renames(remote_config, project.project_name);
+        let obj_repo_path = depot.objects_mirror(remote_config, &local_project);
         let obj_repo = git2::Repository::open_bare(&obj_repo_path)
           .context(format!("failed to open object repository {:?}", obj_repo_path))?;
 
@@ -1538,7 +1539,7 @@ impl Tree {
         }
 
         for branch_name in &prunable {
-          let mut branch = tree_repo.find_branch(&branch_name, git2::BranchType::Local)?;
+          let mut branch = tree_repo.find_branch(branch_name, git2::BranchType::Local)?;
           branch
             .delete()
             .context(format!("failed to delete branch {}", branch_name))?;
@@ -1769,7 +1770,7 @@ impl Tree {
     for result in results.successful {
       let project_name = result.name;
       let result = result.result;
-      let display = result.output.len() != 0 || (!repo_compat && result.rc != 0);
+      let display = !result.output.is_empty() || (!repo_compat && result.rc != 0);
       if display {
         let mut stdout = std::io::stdout();
         if repo_compat {
@@ -2024,7 +2025,7 @@ impl Tree {
           it.skip_current_dir();
         } else if entry.file_name() == ".git" {
           let path = entry.path().parent().unwrap();
-          let relpath = pathdiff::diff_paths(&path, &self.path).unwrap();
+          let relpath = pathdiff::diff_paths(path, &self.path).unwrap();
           projects.insert(relpath.to_str().unwrap().to_string());
           it.skip_current_dir();
         }

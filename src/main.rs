@@ -30,6 +30,7 @@ extern crate serde_derive;
 
 use std::cmp;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto as _;
 use std::ffi::OsString;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
@@ -429,8 +430,8 @@ fn parse_group_filters(group_filters: &str) -> Vec<GroupFilter> {
   let group_filters = group_filters
     .split(',')
     .map(|group| {
-      if group.starts_with('-') {
-        GroupFilter::Exclude(group[1..].to_string())
+      if let Some(group) = group.strip_prefix('-') {
+        GroupFilter::Exclude(group.to_string())
       } else {
         GroupFilter::Include(group.to_string())
       }
@@ -442,7 +443,7 @@ fn parse_group_filters(group_filters: &str) -> Vec<GroupFilter> {
 
 fn cmd_clone(
   config: Arc<Config>,
-  mut pool: &mut Pool,
+  pool: &mut Pool,
   target: &str,
   directory: Option<PathBuf>,
   group_filters: Option<&str>,
@@ -466,10 +467,10 @@ fn cmd_clone(
   let mut tree = Tree::construct(
     &depot,
     &tree_root,
-    &manifest_config,
-    &remote_config,
-    &branch,
-    &file,
+    manifest_config,
+    remote_config,
+    branch,
+    file,
     group_filters,
     fetch,
   )?;
@@ -482,7 +483,7 @@ fn cmd_clone(
 
   tree.sync(
     Arc::clone(&config),
-    &mut pool,
+    pool,
     None,
     fetch_type,
     FetchTarget::Upstream,
@@ -550,11 +551,11 @@ impl TreeStatusDisplayData {
 
     let mut projects = Vec::new();
     for result in results {
-      if !TreeStatusDisplayData::should_report(&result) {
+      if !TreeStatusDisplayData::should_report(result) {
         continue;
       }
 
-      let project = ProjectStatusDisplayData::from_status(&result);
+      let project = ProjectStatusDisplayData::from_status(result);
 
       max_project_length = cmp::max(
         max_project_length,
@@ -573,20 +574,20 @@ impl TreeStatusDisplayData {
   }
 
   pub fn should_report(status: &tree::ProjectStatus) -> bool {
-    return status.ahead != 0 || status.behind != 0 || !status.files.is_empty();
+    status.ahead != 0 || status.behind != 0 || !status.files.is_empty()
   }
 }
 
 fn cmd_status(
   config: Arc<Config>,
-  mut pool: &mut Pool,
+  pool: &mut Pool,
   tree: &Tree,
   status_under: Option<Vec<PathBuf>>,
   quiet: bool,
 ) -> Result<i32, Error> {
   pool.quiet(quiet);
 
-  let results = tree.status(Arc::clone(&config), &mut pool, status_under)?;
+  let results = tree.status(Arc::clone(&config), pool, status_under)?;
   let mut status = 0;
 
   let column_padding = 4;
@@ -770,7 +771,7 @@ fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Er
     .iter()
     .map(|gf| match gf {
       GroupFilter::Include(s) => s.clone(),
-      GroupFilter::Exclude(s) => "-".to_string() + &s,
+      GroupFilter::Exclude(s) => format!("-{}", s),
     })
     .collect();
   let group_filters = group_filters.join_with(",");
@@ -843,7 +844,7 @@ fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Er
       println!("Current branch: {}", branch);
     }
     println!("Manifest revision: {}", project.revision);
-    if local_branches.len() == 0 {
+    if local_branches.is_empty() {
       println!("Local Branches: 0");
     } else {
       println!(
@@ -886,7 +887,7 @@ fn main() {
   let config_path = match args.config {
     Some(path) => {
       info!("using provided config path {:?}", path);
-      PathBuf::from(path)
+      path
     }
 
     None => {
@@ -927,13 +928,10 @@ fn main() {
     })
     .unwrap_or(0);
 
-  let num_cpus = num_cpus::get();
-  let pool_size = if pool_size == 0 {
-    num_cpus
-  } else if pool_size < 0 {
-    cmp::min(num_cpus, (-pool_size) as usize)
-  } else {
-    pool_size as usize
+  let pool_size = match pool_size.cmp(&0) {
+    cmp::Ordering::Equal => num_cpus::get(),
+    cmp::Ordering::Greater => pool_size.try_into().unwrap(),
+    cmp::Ordering::Less => cmp::min(num_cpus::get(), (-pool_size).try_into().unwrap()),
   };
   let mut pool = Pool::with_size(pool_size);
 
@@ -1146,7 +1144,6 @@ fn main() {
         group_filters,
       } => {
         let tree = Tree::find_from_path(cwd)?;
-        let command = command;
         let group_filters = group_filters.as_deref().map(parse_group_filters);
 
         tree.forall(
