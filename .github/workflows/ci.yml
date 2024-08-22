@@ -25,4 +25,5 @@ jobs:
           tool: cargo-hack,taplo-cli
       - run: taplo fmt --check
       - run: cargo fmt --all -- --check
+      - run: cargo hack clippy --all-targets --feature-powerset --workspace -- --deny warnings
       - run: cargo hack test --all-targets --feature-powerset --workspace

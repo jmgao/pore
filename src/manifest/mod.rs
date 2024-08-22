@@ -64,12 +64,15 @@ pub struct ManifestServer {
 
 #[derive(Debug)]
 pub struct SuperProject {
+  #[allow(dead_code)]
   pub name: String,
+  #[allow(dead_code)]
   pub remote: String,
 }
 
 #[derive(Debug)]
 pub struct ContactInfo {
+  #[allow(dead_code)]
   pub bug_url: String,
 }
 
@@ -132,7 +135,7 @@ impl Project {
     let dest_branch = self
       .dest_branch
       .clone()
-      .ok_or_else(|| ())
+      .ok_or(())
       .or_else(|_| self.find_revision(manifest))
       .context(format!("project {} has no dest_branch or revision", self.name))?;
 

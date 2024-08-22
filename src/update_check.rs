@@ -76,7 +76,7 @@ impl UpdateChecker {
       let filtered = UpdateChecker::filter_new_versions(result);
       if !filtered.is_empty() {
         println!("pore v{} ({}) is available!", filtered[0].number, filtered[0].date);
-        println!("");
+        println!();
         for version in filtered {
           println!("  {} ({})", version.number, version.date);
           for change in version.changes {
