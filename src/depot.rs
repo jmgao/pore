@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use filetime::FileTime;
-use fs2::FileExt;
+use fs4::fs_std::FileExt;
 use std::fs::File;
 
 use anyhow::{Context, Error};
@@ -267,7 +267,7 @@ impl Depot {
     let refs_tags = refs_path.join("refs").join("tags");
     Depot::replace_dir(&objects_tags, &refs_tags).context("failed to replace tags")?;
 
-    dir.unlock().context("failed to unlock directory")?;
+    fs4::fs_std::FileExt::unlock(&dir).context("failed to unlock directory")?;
     Ok(())
   }
 
