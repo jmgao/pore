@@ -16,6 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::io::Write;
 use std::iter::FromIterator;
 use std::ops::Deref;
 #[cfg(unix)]
@@ -24,17 +25,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Error};
-use chrono::prelude::*;
 use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
 use url::Url;
 use walkdir::WalkDir;
 
-use crate::util::*;
-use crate::*;
-
-use config::{ManifestConfig, RemoteConfig};
-use depot::Depot;
-use manifest::FileOperation;
+use crate::config::{Config, ManifestConfig, RemoteConfig};
+use crate::depot::Depot;
+use crate::hooks;
+use crate::manifest::{self, FileOperation, Manifest};
+use crate::util::{self, create_symlink, ssh_mux_path};
+use crate::{aosp_remote_style, branch_style, non_aosp_remote_style, project_style, slash_style};
 
 pub struct Tree {
   pub path: PathBuf,
@@ -955,7 +955,7 @@ impl Tree {
 
         for ref project in diff {
           let src_path = self.path.join(project);
-          let date = Utc::now().format("%Y%m%d-%H%M%S").to_string();
+          let date = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
           let dst_path = self.path.join("lost+found").join(&date).join(project);
           println!("Moving deleted project {} to {:?}", project, dst_path);
           let result = std::fs::create_dir_all(&dst_path)
