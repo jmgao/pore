@@ -388,21 +388,21 @@ fn confirm_upload(upload_summaries: Vec<&UploadSummary>, autosubmit: bool) -> Re
     let is_aosp = upload_summary.dest_remote == "aosp";
     lines.push(format!(
       "{}: {} commit{} from branch {} to {}{}{}",
-      PROJECT_STYLE.apply_to(&upload_summary.project_path),
+      project_style().apply_to(&upload_summary.project_path),
       upload_summary.commit_summaries.len(),
       if upload_summary.commit_summaries.len() == 1 {
         ""
       } else {
         "s"
       },
-      BRANCH_STYLE.apply_to(&upload_summary.src_branch),
+      branch_style().apply_to(&upload_summary.src_branch),
       if is_aosp {
-        AOSP_REMOTE_STYLE.apply_to(&upload_summary.dest_remote)
+        aosp_remote_style().apply_to(&upload_summary.dest_remote)
       } else {
-        NON_AOSP_REMOTE_STYLE.apply_to(&upload_summary.dest_remote)
+        non_aosp_remote_style().apply_to(&upload_summary.dest_remote)
       },
-      SLASH_STYLE.apply_to("/"),
-      BRANCH_STYLE.apply_to(&upload_summary.dest_branch),
+      slash_style().apply_to("/"),
+      branch_style().apply_to(&upload_summary.dest_branch),
     ));
 
     for commit_summary in &upload_summary.commit_summaries {
@@ -806,7 +806,7 @@ impl Tree {
                       } else {
                         let head = current_head.unwrap();
                         let head_short = head.shorthand().context("branch name contains invalid UTF-8")?;
-                        format!("branch {}", BRANCH_STYLE.apply_to(&head_short))
+                        format!("branch {}", branch_style().apply_to(&head_short))
                       };
                       bail!("{} {}", head_name, util::ahead_behind(ahead, behind));
                     }
@@ -887,7 +887,7 @@ impl Tree {
 
       let results = pool.execute(job);
       for failure in &results.failed {
-        println!("{}", PROJECT_STYLE.apply_to(&failure.name));
+        println!("{}", project_style().apply_to(&failure.name));
         println!("{}", console::style(format!("  {}", failure.result)).red());
       }
 
@@ -1000,7 +1000,7 @@ impl Tree {
 
         let results = pool.execute(job);
         for failure in &results.failed {
-          println!("{}", PROJECT_STYLE.apply_to(&failure.name));
+          println!("{}", project_style().apply_to(&failure.name));
           println!("{}", console::style(format!("  {}", failure.result)).red());
         }
       }
@@ -1560,7 +1560,7 @@ impl Tree {
 
     for result in results.successful {
       if !result.result.pruned_branches.is_empty() {
-        println!("{}", PROJECT_STYLE.apply_to(result.name));
+        println!("{}", project_style().apply_to(result.name));
         for branch in result.result.pruned_branches {
           println!("  {}", console::style(branch).red());
         }
@@ -1702,7 +1702,7 @@ impl Tree {
         if conflicts.len() == 1 { "" } else { "s" }
       );
       for conflict in conflicts {
-        println!("  {}", PROJECT_STYLE.clone().red().apply_to(&conflict.name));
+        println!("  {}", project_style().clone().red().apply_to(&conflict.name));
       }
     }
 
@@ -1777,7 +1777,7 @@ impl Tree {
           stdout.write_all(&result.output)?;
         } else {
           if result.rc == 0 {
-            println!("{}", PROJECT_STYLE.apply_to(project_name));
+            println!("{}", project_style().apply_to(project_name));
           } else {
             println!("{} (rc = {})", console::style(project_name).red().bold(), result.rc);
             rc = result.rc;
@@ -1981,7 +1981,7 @@ impl Tree {
       if !project_status.files.is_empty() {
         eprintln!(
           "warning: untracked changes in project {}",
-          PROJECT_STYLE.apply_to(&project_name)
+          project_style().apply_to(&project_name)
         );
       }
       let manifest_project = manifest
