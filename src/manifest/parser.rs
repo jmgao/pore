@@ -1,10 +1,14 @@
 use std::io::BufRead;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use crate::manifest::*;
+use crate::manifest::{
+  ContactInfo, Default, ExtendProject, FileOperation, Manifest, ManifestServer, Project, Remote, RepoHooks,
+  SuperProject,
+};
 
 /// Assign a value to an Option after asserting that it is None.
 macro_rules! populate_option {

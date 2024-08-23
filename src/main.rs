@@ -26,7 +26,7 @@ use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
