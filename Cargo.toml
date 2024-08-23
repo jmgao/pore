@@ -8,8 +8,6 @@ description = "a performance oriented reimplementation of repo"
 repository = "https://github.com/jmgao/pore"
 
 [dependencies]
-lazy_static = "1.4.0"
-
 log = "0.4"
 anyhow = "1.0"
 futures = "0.3"

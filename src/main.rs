@@ -17,9 +17,6 @@
 #![allow(clippy::too_many_arguments)]
 
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 extern crate log;
 
 #[macro_use]
@@ -66,12 +63,24 @@ use manifest::Manifest;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
 use update_check::UpdateChecker;
 
-lazy_static! {
-  static ref AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().green();
-  static ref NON_AOSP_REMOTE_STYLE: console::Style = console::Style::new().bold().red();
-  static ref SLASH_STYLE: console::Style = console::Style::new().bold();
-  static ref BRANCH_STYLE: console::Style = console::Style::new().bold().cyan();
-  static ref PROJECT_STYLE: console::Style = console::Style::new().bold();
+fn aosp_remote_style() -> console::Style {
+  console::Style::new().bold().green()
+}
+
+fn non_aosp_remote_style() -> console::Style {
+  console::Style::new().bold().red()
+}
+
+fn slash_style() -> console::Style {
+  console::Style::new().bold()
+}
+
+fn branch_style() -> console::Style {
+  console::Style::new().bold().cyan()
+}
+
+fn project_style() -> console::Style {
+  console::Style::new().bold()
 }
 
 use clap::{Parser, Subcommand};
@@ -505,7 +514,7 @@ struct ProjectStatusDisplayData {
 impl ProjectStatusDisplayData {
   pub fn from_status(status: &tree::ProjectStatus) -> ProjectStatusDisplayData {
     let branch = match &status.branch {
-      Some(branch) => BRANCH_STYLE.apply_to(format!("branch {}", branch)),
+      Some(branch) => branch_style().apply_to(format!("branch {}", branch)),
       None => console::style("no branch".to_string()).red(),
     };
 
@@ -529,7 +538,7 @@ impl ProjectStatusDisplayData {
     let dirty = status.branch.is_none() || !files.is_empty();
 
     ProjectStatusDisplayData {
-      location: PROJECT_STYLE.apply_to(format!("project {}", status.path)).to_string(),
+      location: project_style().apply_to(format!("project {}", status.path)).to_string(),
       branch: format!("{}{}", branch, util::ahead_behind(status.ahead, status.behind)),
       top_commit: status.commit_summary.clone().unwrap_or_default(),
       files,

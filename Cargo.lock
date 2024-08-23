@@ -1219,7 +1219,6 @@ dependencies = [
  "git2",
  "indoc",
  "joinery",
- "lazy_static",
  "log",
  "maplit",
  "minidom",
