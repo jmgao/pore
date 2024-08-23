@@ -17,9 +17,6 @@
 #![allow(clippy::too_many_arguments)]
 
 #[macro_use]
-extern crate log;
-
-#[macro_use]
 extern crate anyhow;
 
 #[macro_use]
@@ -870,18 +867,25 @@ fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Er
 fn main() {
   let args: Args = Args::parse();
 
-  if let Some(trace_file) = args.trace_file {
-    match std::fs::File::create(trace_file) {
+  let _guard = match args.trace_file {
+    Some(trace_file) => match std::fs::File::create(trace_file) {
       Ok(file) => {
-        let tracer = tracing_chromium::Tracer::from_output(Box::new(file));
-        tracing_facade::set_boxed_tracer(Box::new(tracer));
+        use tracing_subscriber::prelude::*;
+
+        let (chrome_layer, guard) = tracing_chrome::ChromeLayerBuilder::new().writer(file).build();
+        let () = tracing_subscriber::registry().with(chrome_layer).init();
+        Some(guard)
       }
 
       Err(err) => {
         fatal!("failed to open trace file: {}", err);
       }
+    },
+    None => {
+      let () = tracing_subscriber::fmt::init();
+      None
     }
-  }
+  };
 
   if let Some(cwd) = args.cwd {
     if let Err(err) = std::env::set_current_dir(&cwd) {
@@ -895,7 +899,7 @@ fn main() {
   let repo_compat = std::env::args().next() == Some("repo".into());
   let config_path = match args.config {
     Some(path) => {
-      info!("using provided config path {:?}", path);
+      tracing::info!("using provided config path {:?}", path);
       path
     }
 
@@ -904,10 +908,10 @@ fn main() {
         .expect("failed to find home directory")
         .join(".pore.toml");
       if !path.exists() {
-        info!("falling back to global config path /etc/pore.toml");
+        tracing::info!("falling back to global config path /etc/pore.toml");
         "/etc/pore.toml".into()
       } else {
-        info!("using default config path {:?}", path);
+        tracing::info!("using default config path {:?}", path);
         path
       }
     }
