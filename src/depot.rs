@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use filetime::FileTime;
-use fs2::FileExt;
+use fs4::fs_std::FileExt as _;
 use std::fs::File;
 
 use anyhow::{Context, Error};
