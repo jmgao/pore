@@ -941,10 +941,17 @@ fn main() {
     })
     .unwrap_or(0);
 
+  let num_cpus = match std::thread::available_parallelism() {
+    Ok(num_cpus) => num_cpus.get(),
+    Err(err) => {
+      eprintln!("warning: failed to get number of CPUs, falling back to 1: {}", err);
+      1
+    }
+  };
   let pool_size = match pool_size.cmp(&0) {
-    cmp::Ordering::Equal => num_cpus::get(),
+    cmp::Ordering::Equal => num_cpus,
     cmp::Ordering::Greater => pool_size.try_into().unwrap(),
-    cmp::Ordering::Less => cmp::min(num_cpus::get(), (-pool_size).try_into().unwrap()),
+    cmp::Ordering::Less => cmp::min(num_cpus, (-pool_size).try_into().unwrap()),
   };
   let mut pool = Pool::with_size(pool_size);
 
