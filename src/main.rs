@@ -30,7 +30,6 @@ use std::fmt::Write as _;
 use std::io::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context, Error};
 use atty::Stream;
@@ -449,7 +448,7 @@ fn parse_group_filters(group_filters: &str) -> Vec<GroupFilter> {
 }
 
 fn cmd_clone(
-  config: Arc<Config>,
+  config: &Config,
   pool: &mut Pool,
   target: &str,
   directory: Option<PathBuf>,
@@ -489,7 +488,7 @@ fn cmd_clone(
   };
 
   tree.sync(
-    Arc::clone(&config),
+    config,
     pool,
     None,
     fetch_type,
@@ -586,7 +585,7 @@ impl TreeStatusDisplayData {
 }
 
 fn cmd_status(
-  config: Arc<Config>,
+  config: &Config,
   pool: &mut Pool,
   tree: &Tree,
   status_under: Option<Vec<PathBuf>>,
@@ -594,7 +593,7 @@ fn cmd_status(
 ) -> Result<i32, Error> {
   pool.quiet(quiet);
 
-  let results = tree.status(Arc::clone(&config), pool, status_under)?;
+  let results = tree.status(config, pool, status_under)?;
   let mut status = 0;
 
   let column_padding = 4;
@@ -640,7 +639,7 @@ fn cmd_status(
   Ok(status)
 }
 
-fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<PathBuf>, copy: bool) -> Result<i32, Error> {
+fn cmd_import(config: &Config, pool: &mut Pool, target_path: Option<PathBuf>, copy: bool) -> Result<i32, Error> {
   let target_path = target_path.unwrap_or(PathBuf::from("."));
   let target_metadata = std::fs::metadata(&target_path)?;
 
@@ -675,11 +674,7 @@ fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<PathBuf>
       );
     }
 
-    let depot = Arc::new(depot);
-
     for project in projects {
-      let depot = Arc::clone(&depot);
-
       let src_path = target_path
         .join(".repo")
         .join("project-objects")
@@ -691,7 +686,7 @@ fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<PathBuf>
         continue;
       }
 
-      job.add_task(project.clone(), move |_| -> Result<(), Error> {
+      job.add_task(project.clone(), move || -> Result<(), Error> {
         if !depot_path.is_dir() {
           // Create a new repository in its location.
           git2::Repository::init_bare(&depot_path).context("failed to create git repository")?;
@@ -768,7 +763,7 @@ fn set_trace_id() {
   std::env::set_var(key, my_id)
 }
 
-fn cmd_info(config: Arc<Config>, tree: &Tree, paths: &[&Path]) -> Result<i32, Error> {
+fn cmd_info(config: &Config, tree: &Tree, paths: &[&Path]) -> Result<i32, Error> {
   let manifest_branch = &tree.config.branch;
   // TODO: Actually use the manifest for this.
   let manifest_merge_branch = format!("refs/heads/{}", manifest_branch);
@@ -921,14 +916,14 @@ fn main() {
   };
 
   let config = match Config::from_path(&config_path) {
-    Ok(config) => Arc::new(config),
+    Ok(config) => config,
 
     Err(err) => {
       eprintln!(
         "warning: failed to read config file at {:?}, falling back to default config: {}",
         config_path, err,
       );
-      Arc::new(Config::default())
+      Config::default()
     }
   };
 
@@ -973,7 +968,7 @@ fn main() {
       } => {
         let fetch = !local;
         cmd_clone(
-          Arc::clone(&config),
+          &config,
           &mut pool,
           &target,
           Some(PathBuf::from(".")),
@@ -989,7 +984,7 @@ fn main() {
       } => {
         let fetch = !local;
         cmd_clone(
-          Arc::clone(&config),
+          &config,
           &mut pool,
           target.as_str(),
           directory,
@@ -1017,7 +1012,7 @@ fn main() {
         };
 
         tree.sync(
-          Arc::clone(&config),
+          &config,
           &mut pool,
           path,
           FetchType::Fetch,
@@ -1054,7 +1049,7 @@ fn main() {
           }
         };
         tree.sync(
-          Arc::clone(&config),
+          &config,
           &mut pool,
           path,
           fetch_type,
@@ -1075,7 +1070,7 @@ fn main() {
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
 
-        tree.start(Arc::clone(&config), &depot, branch, revision, &path.unwrap_or(cwd))
+        tree.start(&config, &depot, branch, revision, &path.unwrap_or(cwd))
       }
       Commands::Rebase {
         interactive,
@@ -1083,7 +1078,7 @@ fn main() {
         path,
       } => {
         let tree = Tree::find_from_path(cwd)?;
-        tree.rebase(config, &mut pool, interactive, autosquash, path)
+        tree.rebase(&config, &mut pool, interactive, autosquash, path)
       }
       Commands::Upload {
         path,
@@ -1134,7 +1129,7 @@ fn main() {
         }
 
         tree.upload(
-          Arc::clone(&config),
+          &config,
           &mut pool,
           path,
           current_branch,
@@ -1155,11 +1150,11 @@ fn main() {
         let remote_config = config.find_remote(&tree.config.remote)?;
         let depot = config.find_depot(&remote_config.depot)?;
 
-        tree.prune(config, &mut pool, &depot, path)
+        tree.prune(&config, &mut pool, &depot, path)
       }
       Commands::Status { path, quiet } => {
         let tree = Tree::find_from_path(cwd)?;
-        cmd_status(Arc::clone(&config), &mut pool, &tree, path, quiet)
+        cmd_status(&config, &mut pool, &tree, path, quiet)
       }
       Commands::Forall {
         path,
@@ -1169,37 +1164,30 @@ fn main() {
         let tree = Tree::find_from_path(cwd)?;
         let group_filters = group_filters.as_deref().map(parse_group_filters);
 
-        tree.forall(
-          Arc::clone(&config),
-          &mut pool,
-          path,
-          group_filters,
-          command.as_str(),
-          repo_compat,
-        )
+        tree.forall(&config, &mut pool, path, group_filters, command.as_str(), repo_compat)
       }
       Commands::Preupload { path } => {
         let tree = Tree::find_from_path(cwd)?;
-        tree.preupload(config, &mut pool, path)
+        tree.preupload(&config, &mut pool, path)
       }
-      Commands::Import { copy, directory } => cmd_import(config, &mut pool, directory, copy),
+      Commands::Import { copy, directory } => cmd_import(&config, &mut pool, directory, copy),
       Commands::List {} => {
         let tree = Tree::find_from_path(cwd)?;
-        tree.list(config)
+        tree.list(&config)
       }
       Commands::FindDeleted {} => {
         let tree = Tree::find_from_path(cwd)?;
-        tree.find_deleted(config, &mut pool)
+        tree.find_deleted(&config, &mut pool)
       }
       Commands::Manifest { output } => {
         let tree = Tree::find_from_path(cwd)?;
-        tree.generate_manifest(Arc::clone(&config), &mut pool, output)
+        tree.generate_manifest(&config, &mut pool, output)
       }
       Commands::Config { default } => {
         if default {
           println!("{}", Config::default_string());
         } else {
-          println!("{}", toml::to_string_pretty(config.as_ref())?);
+          println!("{}", toml::to_string_pretty(&config)?);
         }
         Ok(0)
       }
@@ -1209,7 +1197,7 @@ fn main() {
           None => Vec::new(),
           Some(paths) => paths.iter().map(PathBuf::as_path).collect(),
         };
-        cmd_info(config, &tree, &paths_vec)
+        cmd_info(&config, &tree, &paths_vec)
       }
     }
   };

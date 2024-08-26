@@ -94,8 +94,8 @@ pub struct Project {
 }
 
 impl Project {
-  pub fn path(&self) -> String {
-    self.path.clone().unwrap_or_else(|| self.name.clone())
+  pub fn path(&self) -> &str {
+    self.path.as_ref().unwrap_or(&self.name)
   }
 
   pub fn find_remote(&self, manifest: &Manifest) -> Result<String, Error> {
