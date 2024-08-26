@@ -60,7 +60,7 @@ pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), 
     populate_from_option!(elem, project.sync_c, "sync-c");
     populate_from_option!(elem, project.clone_depth, "clone-depth");
 
-    let groups = project.groups.clone().map(|vec| vec.join(","));
+    let groups = project.groups.as_ref().map(|vec| vec.join(","));
     populate_from_option!(elem, groups, "groups");
 
     for file_op in &project.file_operations {
