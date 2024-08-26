@@ -22,7 +22,6 @@ use std::ops::Deref;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context, Error};
 use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
@@ -568,7 +567,7 @@ impl Tree {
 
   pub fn collect_manifest_projects(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     manifest: &Manifest,
     under: Option<Vec<PathBuf>>,
     additional_group_filters: Option<Vec<GroupFilter>>,
@@ -606,7 +605,7 @@ impl Tree {
 
     let mut projects = Vec::new();
     for (project_path, project) in filtered_projects {
-      let (remote, remote_config) = manifest.resolve_project_remote(&config, &self.config, project)?;
+      let (remote, remote_config) = manifest.resolve_project_remote(config, &self.config, project)?;
       let revision = project
         .revision
         .clone()
@@ -629,7 +628,7 @@ impl Tree {
   fn sync_repos(
     &mut self,
     pool: &mut Pool,
-    config: Arc<Config>,
+    config: &Config,
     projects: Vec<ProjectInfo>,
     fetch_target: Option<FetchTarget>,
     checkout: CheckoutType,
@@ -639,11 +638,7 @@ impl Tree {
     ssh_masters: &mut HashMap<String, std::process::Child>,
     no_lfs: bool,
   ) -> Result<i32, Error> {
-    let config = Arc::new(config.clone());
-    let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
     if let Some(target) = fetch_target {
-      let target: Arc<FetchTarget> = Arc::new(target);
-
       let mut job = Job::with_name("fetching");
 
       // The same underlying repository might be checked out into multiple directories.
@@ -694,12 +689,11 @@ impl Tree {
       }
 
       for (project, target) in &fetch_projects {
-        let config = Arc::clone(&config);
         let project_name = project.project_name.clone();
         let remote_name = project.remote.clone();
         let target = target.clone();
 
-        job.add_task(project_name.clone(), move |_| -> Result<(), Error> {
+        job.add_task(project_name.clone(), move || -> Result<(), Error> {
           let remote = config
             .find_remote(&remote_name)
             .context(format!("failed to find remote {}", remote_name))?;
@@ -730,31 +724,28 @@ impl Tree {
     }
 
     if checkout == CheckoutType::Checkout || checkout == CheckoutType::RefsOnly {
+      let lfs_projects = dashmap::DashMap::<String, PathBuf>::with_capacity(10);
       let mut job = Job::with_name("checkout");
-      let tree_root = Arc::new(self.path.clone());
-      let lfs_projects = Arc::new(dashmap::DashMap::<String, PathBuf>::with_capacity(10));
+      let tree_root = &self.path;
 
       for project in &projects {
-        let config = Arc::clone(&config);
-        let project_info = Arc::clone(project);
-        let project_path = self.path.join(&project.project_path);
-        let tree_root = Arc::clone(&tree_root);
-        let lfs_projects = Arc::clone(&lfs_projects);
+        let lfs_projects = &lfs_projects;
+        let project_path = tree_root.join(&project.project_path);
 
-        job.add_task(project.project_path.clone(), move |_| {
+        job.add_task(project.project_path.clone(), move || {
           let remote = config
-            .find_remote(&project_info.remote)
-            .context(format!("failed to find remote {}", project_info.remote))?;
+            .find_remote(&project.remote)
+            .context(format!("failed to find remote {}", project.remote))?;
           let depot = config
             .find_depot(&remote.depot)
-            .context(format!("failed to find depot for remote {}", project_info.remote))?;
+            .context(format!("failed to find depot for remote {}", project.remote))?;
 
-          let project_name = &project_info.project_name;
-          let revision = &project_info.revision;
+          let project_name = &project.project_name;
+          let revision = &project.revision;
 
           if project_path.exists() {
             depot
-              .update_remote_refs(remote, &project_info.project_name, &project_path)
+              .update_remote_refs(remote, &project.project_name, &project_path)
               .context("failed to update remote refs")?;
           }
 
@@ -833,7 +824,7 @@ impl Tree {
               depot.clone_repo(remote, project_name, revision, &project_path)?;
             }
 
-            if project_info.manifest_project {
+            if project.manifest_project {
               // Some tools look at the upstream tracking branch of .repo/manifest to determine
               // what manifest branch is being used.
               let repo = git2::Repository::open(&project_path).context("failed to open repository".to_string())?;
@@ -852,10 +843,10 @@ impl Tree {
 
               // TODO: repo uses origin as the upstream, regardless of what the remote is called.
               branch
-                .set_upstream(Some(&format!("{}/{}", project_info.remote, project_info.revision)))
+                .set_upstream(Some(&format!("{}/{}", project.remote, project.revision)))
                 .context(format!(
                   "failed to set manifest branch upstream to {}/{}",
-                  project_info.remote, project_info.revision
+                  project.remote, project.revision
                 ))?;
               repo
                 .set_head("refs/heads/default")
@@ -864,7 +855,7 @@ impl Tree {
 
             // Set up symlinks to repo hooks.
             let hooks_dir = project_path.join(".git").join("hooks");
-            let relpath = pathdiff::diff_paths(tree_root.as_ref(), &hooks_dir)
+            let relpath = pathdiff::diff_paths(tree_root, &hooks_dir)
               .ok_or_else(|| format_err!("failed to calculate path diff from hooks to tree root"))?
               .join(".pore")
               .join("hooks");
@@ -877,7 +868,7 @@ impl Tree {
             }
 
             if !no_lfs && Path::exists(&project_path.join(".lfsconfig")) {
-              lfs_projects.insert(project_info.project_path.clone(), project_path);
+              lfs_projects.insert(project.project_path.clone(), project_path);
             }
           }
 
@@ -978,7 +969,7 @@ impl Tree {
         for project in lfs_projects.iter() {
           let project_path = project.value().clone();
 
-          job.add_task(project.key(), move |_| -> Result<(), Error> {
+          job.add_task(project.key(), move || -> Result<(), Error> {
             macro_rules! run_git {
               ($args:expr, $msg:expr) => {
                 std::process::Command::new("git")
@@ -1069,7 +1060,7 @@ impl Tree {
 
   pub fn sync(
     &mut self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     sync_under: Option<Vec<PathBuf>>,
     fetch_type: FetchType,
@@ -1106,7 +1097,7 @@ impl Tree {
 
   fn sync_impl(
     &mut self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     sync_under: Option<Vec<PathBuf>>,
     fetch_type: FetchType,
@@ -1130,7 +1121,7 @@ impl Tree {
     if fetch_type != FetchType::NoFetch {
       self.sync_repos(
         pool,
-        Arc::clone(&config),
+        config,
         manifest,
         Some(FetchTarget::Upstream),
         checkout,
@@ -1143,10 +1134,10 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, sync_under.clone(), None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, sync_under.clone(), None)?;
     self.sync_repos(
       pool,
-      Arc::clone(&config),
+      config,
       projects,
       if fetch_type == FetchType::NoFetch {
         None
@@ -1171,22 +1162,17 @@ impl Tree {
 
   pub fn status(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     status_under: Option<Vec<PathBuf>>,
   ) -> Result<ExecutionResults<ProjectStatus, Error>, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(config, &manifest, status_under, None)?;
-    let projects: Vec<Arc<_>> = projects.into_iter().map(Arc::new).collect();
 
     let mut job = Job::with_name("status");
-    let tree_root = Arc::new(self.path.clone());
-
     for project in &projects {
-      let project = Arc::clone(project);
-      let tree_root = Arc::clone(&tree_root);
-      job.add_task(project.project_path.clone(), move |_| -> Result<ProjectStatus, Error> {
-        let path = tree_root.join(&project.project_path);
+      job.add_task(project.project_path.clone(), move || -> Result<ProjectStatus, Error> {
+        let path = self.path.join(&project.project_path);
         let repo =
           git2::Repository::open(&path).context(format!("failed to open repository {}", project.project_path))?;
 
@@ -1270,7 +1256,7 @@ impl Tree {
 
   pub fn start(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     _depot: &Depot,
     branch_name: String,
     revision: Option<String>,
@@ -1301,7 +1287,7 @@ impl Tree {
       .ok_or_else(|| format_err!("failed to find project {:?}", project_path))?;
 
     let upstream = project.find_revision(&manifest)?;
-    let (remote, _remote_config) = manifest.resolve_project_remote(&config, &self.config, project)?;
+    let (remote, _remote_config) = manifest.resolve_project_remote(config, &self.config, project)?;
     let object = util::parse_revision(&repo, &remote, revision.as_ref().unwrap_or(&upstream))?;
     let commit = object.peel_to_commit().context("failed to peel object to commit")?;
 
@@ -1322,7 +1308,7 @@ impl Tree {
 
   pub fn upload(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     upload_under: Option<Vec<PathBuf>>,
     current_branch: bool,
@@ -1349,7 +1335,7 @@ impl Tree {
     );
 
     if !no_verify {
-      let result = self.preupload(Arc::clone(&config), pool, upload_under.clone())?;
+      let result = self.preupload(config, pool, upload_under.clone())?;
       if result != 0 {
         bail!("preupload hooks failed");
       }
@@ -1362,7 +1348,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, upload_under, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, upload_under, None)?;
     let mut uploads: Vec<UploadInfo> = Vec::new();
 
     for project in projects {
@@ -1444,7 +1430,7 @@ impl Tree {
 
     let mut job = Job::with_name("uploading");
     for mut upload in uploads {
-      job.add_task(upload.project_path.clone(), move |_| -> Result<String, Error> {
+      job.add_task(upload.project_path.clone(), move || -> Result<String, Error> {
         if dry_run {
           Ok(format!("running: {:?}", upload.command))
         } else {
@@ -1474,28 +1460,23 @@ impl Tree {
 
   pub fn prune(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     depot: &Depot,
     prune_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(Arc::clone(&config), &manifest, prune_under, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, prune_under, None)?;
 
     let mut job = Job::with_name("pruning");
-    let tree_root = Arc::new(self.path.clone());
 
     struct PruneResult {
       pruned_branches: Vec<String>,
     }
 
-    let depot = Arc::new(depot.clone());
     for project in projects {
-      let depot = Arc::clone(&depot);
-      let tree_root = Arc::clone(&tree_root);
-      let config = Arc::clone(&config);
-      job.add_task(project.project_path.clone(), move |_| -> Result<PruneResult, Error> {
-        let path = tree_root.join(&project.project_path);
+      job.add_task(project.project_path.clone(), move || -> Result<PruneResult, Error> {
+        let path = self.path.join(&project.project_path);
         let tree_repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
 
@@ -1576,7 +1557,7 @@ impl Tree {
 
   pub fn rebase(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     interactive: bool,
     autosquash: bool,
@@ -1633,13 +1614,10 @@ impl Tree {
     projects: Vec<ProjectInfo>,
   ) -> Result<i32, Error> {
     let mut job = Job::with_name("rebasing");
-    let tree_root = Arc::new(self.path.clone());
-    let manifest = Arc::new(manifest);
     for project in projects {
-      let tree_root = Arc::clone(&tree_root);
-      let manifest = Arc::clone(&manifest);
-      job.add_task(project.project_path.clone(), move |_| -> Result<bool, Error> {
-        let path = tree_root.join(&project.project_path);
+      let manifest = &manifest;
+      job.add_task(project.project_path.clone(), move || -> Result<bool, Error> {
+        let path = self.path.join(&project.project_path);
         let repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
 
@@ -1715,7 +1693,7 @@ impl Tree {
 
   pub fn forall(
     &self,
-    config: Arc<Config>,
+    config: &Config,
     pool: &mut Pool,
     forall_under: Option<Vec<PathBuf>>,
     group_filters: Option<Vec<GroupFilter>>,
@@ -1726,8 +1704,6 @@ impl Tree {
     let projects = self.collect_manifest_projects(config, &manifest, forall_under, group_filters)?;
 
     let mut job = Job::with_name("forall");
-    let tree_root = Arc::new(self.path.clone());
-    let command = Arc::new(command.to_string());
 
     struct CommandResult {
       rc: i32,
@@ -1735,18 +1711,15 @@ impl Tree {
     }
 
     for project in projects {
-      let tree_root = Arc::clone(&tree_root);
-      let command = Arc::clone(&command);
-
-      job.add_task(project.project_path.clone(), move |_| -> Result<CommandResult, Error> {
-        let path = tree_root.join(&project.project_path);
-        let rel_to_root = pathdiff::diff_paths(tree_root.as_ref(), &path)
+      job.add_task(project.project_path.clone(), move || -> Result<CommandResult, Error> {
+        let path = self.path.join(&project.project_path);
+        let rel_to_root = pathdiff::diff_paths(&self.path, &path)
           .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
 
         let result = std::process::Command::new("sh")
           .arg("-c")
-          .arg(command.deref())
-          .env("PORE_ROOT", tree_root.as_os_str())
+          .arg(command)
+          .env("PORE_ROOT", self.path.as_os_str())
           .env("PORE_ROOT_REL", rel_to_root.as_os_str())
           .env("REPO_PROJECT", project.project_name)
           .env("REPO_PATH", project.project_path)
@@ -1803,7 +1776,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn preupload(&self, config: Arc<Config>, pool: &mut Pool, under: Option<Vec<PathBuf>>) -> Result<i32, Error> {
+  pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<PathBuf>>) -> Result<i32, Error> {
     let manifest = self.read_manifest().context("failed to read manifest")?;
     let projects = self
       .collect_manifest_projects(config, &manifest, under, None)
@@ -1843,9 +1816,8 @@ impl Tree {
       .clone()
       .ok_or_else(|| format_err!("no path for repo-hook project '{}'", hook_project_name))?;
 
+    let hook_path = self.path.join(&hook_project_path).join("pre-upload.py");
     let mut job = Job::with_name("preupload");
-
-    let hook_path = Arc::new(self.path.join(&hook_project_path).join("pre-upload.py"));
 
     struct PresubmitResult {
       rc: i32,
@@ -1854,11 +1826,11 @@ impl Tree {
 
     for project in projects {
       let project_path = self.path.join(&project.project_path);
-      let hook_path = Arc::clone(&hook_path);
+      let hook_path = &hook_path;
 
       job.add_task(
         project.project_path.clone(),
-        move |_| -> Result<PresubmitResult, Error> {
+        move || -> Result<PresubmitResult, Error> {
           let repo = git2::Repository::open(project_path.deref()).context("failed to open repository".to_string())?;
 
           let head = repo.head().context("could not determine HEAD")?;
@@ -1889,7 +1861,7 @@ impl Tree {
               output: Vec::new(),
             })
           } else {
-            let mut cmd = std::process::Command::new(hook_path.deref().clone());
+            let mut cmd = std::process::Command::new(hook_path.deref());
             cmd.current_dir(&project_path);
             cmd.arg("--project").arg(&project_path);
 
@@ -1959,7 +1931,7 @@ impl Tree {
     Ok(rc)
   }
 
-  pub fn generate_manifest(&self, config: Arc<Config>, pool: &mut Pool, output: Option<PathBuf>) -> Result<i32, Error> {
+  pub fn generate_manifest(&self, config: &Config, pool: &mut Pool, output: Option<PathBuf>) -> Result<i32, Error> {
     let status = self.status(config, pool, None)?;
     let mut bail = false;
     for failed in status.failed {
@@ -2001,7 +1973,7 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn list(&self, config: Arc<Config>) -> Result<i32, Error> {
+  pub fn list(&self, config: &Config) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
     let projects = self.collect_manifest_projects(config, &manifest, None, None)?;
     for project in projects {
@@ -2010,7 +1982,7 @@ impl Tree {
     Ok(0)
   }
 
-  pub fn find_deleted(&self, _config: Arc<Config>, _pool: &mut Pool) -> Result<i32, Error> {
+  pub fn find_deleted(&self, _config: &Config, _pool: &mut Pool) -> Result<i32, Error> {
     // First, find the repos in the tree.
     let mut it = WalkDir::new(&self.path).into_iter();
     let mut projects: HashSet<String> = HashSet::new();
