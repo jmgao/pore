@@ -26,6 +26,7 @@ use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::io::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -682,7 +683,7 @@ fn cmd_import(config: Arc<Config>, pool: &mut Pool, target_path: Option<PathBuf>
       let src_path = target_path
         .join(".repo")
         .join("project-objects")
-        .join(project.clone() + ".git");
+        .join(format!("{}.git", project));
       let depot_path = depot.objects_mirror(remote_config, &Depot::apply_project_renames(remote_config, &project));
 
       if !src_path.is_dir() {
@@ -756,11 +757,13 @@ fn set_trace_id() {
     None => OsString::new(),
   };
 
-  my_id.push(format!(
+  write!(
+    my_id,
     "pore-{}-P{:08x}",
     chrono::Utc::now().format("%Y%m%dT%H%M%S%.6fZ"),
     std::process::id()
-  ));
+  )
+  .expect("writing to OsString failed");
 
   std::env::set_var(key, my_id)
 }

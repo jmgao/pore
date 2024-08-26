@@ -1894,7 +1894,7 @@ impl Tree {
             cmd.arg("--project").arg(&project_path);
 
             for commit in commits {
-              cmd.arg(format!("{}", commit));
+              cmd.arg(commit.to_string());
             }
 
             let result = cmd.output()?;
@@ -1984,12 +1984,12 @@ impl Tree {
           project_style().apply_to(&project_name)
         );
       }
-      let manifest_project = manifest
+      let (_, manifest_project) = manifest
         .projects
         .iter_mut()
         .find(|(_k, v)| v.path.as_ref() == Some(&project_name))
         .ok_or_else(|| format_err!("failed to find project {} in manifest", project_name))?;
-      manifest_project.1.revision = Some(format!("{}", project_status.commit));
+      manifest_project.revision = Some(project_status.commit.to_string());
     }
 
     let output: Box<dyn Write> = match output {

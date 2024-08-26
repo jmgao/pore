@@ -65,7 +65,7 @@ impl Depot {
     // Set its alternates.
     let alternates_path = git_path.join("objects").join("info").join("alternates");
     let source_path = src.join("objects");
-    let alternates_contents = source_path.to_str().unwrap().to_owned() + "\n";
+    let alternates_contents = format!("{}\n", source_path.to_str().unwrap());
     std::fs::write(&alternates_path, &alternates_contents)
       .context(format!("failed to set alternates for new repository {:?}", dst))?;
 
@@ -166,13 +166,15 @@ impl Depot {
   }
 
   pub fn objects_mirror(&self, _remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
-    let repo_name: String = project.0.clone() + ".git";
+    let ProjectName(project) = project;
+    let repo_name: String = format!("{}.git", project);
     self.path.join("objects").join(repo_name)
   }
 
   pub fn refs_mirror(&self, remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
     let remote: &str = remote_config.name.as_ref();
-    let repo_name: String = project.0.clone() + ".git";
+    let ProjectName(project) = project;
+    let repo_name: String = format!("{}.git", project);
     self.path.join("refs").join(remote).join(repo_name)
   }
 
