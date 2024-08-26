@@ -1237,7 +1237,6 @@ dependencies = [
  "joinery",
  "maplit",
  "minidom",
- "num_cpus",
  "pathdiff",
  "progpool",
  "quick-xml",
