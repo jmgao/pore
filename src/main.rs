@@ -22,6 +22,7 @@ extern crate anyhow;
 #[macro_use]
 extern crate serde_derive;
 
+use std::borrow::Cow;
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
@@ -33,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
 use atty::Stream;
-use joinery::Joinable;
+use joinery::{Joinable, JoinableIterator};
 use progpool::{Job, Pool};
 
 #[macro_export]
@@ -123,6 +124,9 @@ enum Commands {
     #[arg(short)]
     local: bool,
   },
+
+  /// List the topic branches
+  Branches {},
 
   /// Checkout a new tree into a new directory
   Clone {
@@ -392,6 +396,7 @@ impl std::fmt::Display for Commands {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Commands::Init { .. } => write!(f, "init"),
+      Commands::Branches { .. } => write!(f, "branches"),
       Commands::Clone { .. } => write!(f, "clone"),
       Commands::Fetch { .. } => write!(f, "fetch"),
       Commands::Sync { .. } => write!(f, "sync"),
@@ -445,6 +450,46 @@ fn parse_group_filters(group_filters: &str) -> Vec<GroupFilter> {
     .collect();
 
   group_filters
+}
+
+fn cmd_branches(config: Config, pool: &mut Pool, tree: &Tree) -> Result<i32, Error> {
+  let results = tree.branches(config, pool)?;
+
+  if results.failed.is_empty() {
+    let projects_with_topic_branch = results.successful.into_iter().filter_map(|execution_result| {
+      if execution_result.result.branches.is_empty() {
+        Some(execution_result.result)
+      } else {
+        None
+      }
+    });
+
+    for project in projects_with_topic_branch {
+      println!(
+        "{}: {}",
+        project.name,
+        project
+          .branches
+          .iter()
+          .map(|branch| {
+            if branch.is_head {
+              Cow::Owned(format!("*{}", branch.name))
+            } else {
+              Cow::Borrowed(&branch.name)
+            }
+          })
+          .join_with(", ")
+      );
+    }
+
+    Ok(0)
+  } else {
+    for error in results.failed {
+      eprintln!("{}: {}", error.name, error.result);
+    }
+
+    Ok(1)
+  }
 }
 
 fn cmd_clone(
@@ -660,7 +705,7 @@ fn cmd_import(config: &Config, pool: &mut Pool, target_path: Option<PathBuf>, co
 
   let mut job = Job::with_name("import");
   for (remote, projects) in &remote_projects {
-    let remote_config = config.find_remote(&remote)?;
+    let remote_config = config.find_remote(remote)?;
     let depot = config.find_depot(&remote_config.depot)?;
     std::fs::create_dir_all(&depot.path).context("failed to create depot directory")?;
     let depot_metadata = std::fs::metadata(&depot.path)?;
@@ -975,6 +1020,10 @@ fn main() {
           group_filters.as_deref(),
           fetch,
         )
+      }
+      Commands::Branches {} => {
+        let tree = Tree::find_from_path(cwd)?;
+        cmd_branches(config, &mut pool, &tree)
       }
       Commands::Clone {
         target,
