@@ -639,8 +639,6 @@ impl Tree {
     no_lfs: bool,
   ) -> Result<i32, Error> {
     if let Some(target) = fetch_target {
-      let mut job = Job::with_name("fetching");
-
       // The same underlying repository might be checked out into multiple directories.
       #[derive(PartialEq, Eq, Hash)]
       struct FetchProject {
@@ -688,14 +686,15 @@ impl Tree {
         }
       }
 
+      let mut job = Job::with_name("fetching");
       for (project, target) in &fetch_projects {
-        let project_name = project.project_name.clone();
-        let remote_name = project.remote.clone();
+        let project_name = &project.project_name;
+        let remote_name = &project.remote;
         let target = target.clone();
 
-        job.add_task(project_name.clone(), move || -> Result<(), Error> {
+        job.add_task(project_name, move || -> Result<(), Error> {
           let remote = config
-            .find_remote(&remote_name)
+            .find_remote(remote_name)
             .context(format!("failed to find remote {}", remote_name))?;
           let depot = config
             .find_depot(&remote.depot)
@@ -708,7 +707,7 @@ impl Tree {
           };
           let target = target_vec.as_deref();
           depot
-            .fetch_repo(remote, &project_name, target, fetch_tags, None)
+            .fetch_repo(remote, project_name, target, fetch_tags, None)
             .context(format!("failed to fetch for project {}", project_name,))?;
           Ok(())
         });
@@ -732,7 +731,7 @@ impl Tree {
         let lfs_projects = &lfs_projects;
         let project_path = tree_root.join(&project.project_path);
 
-        job.add_task(project.project_path.clone(), move || {
+        job.add_task(&project.project_path, move || {
           let remote = config
             .find_remote(&project.remote)
             .context(format!("failed to find remote {}", project.remote))?;
@@ -965,10 +964,8 @@ impl Tree {
       if !lfs_projects.is_empty() {
         let mut job = Job::with_name("lfs pull");
 
-        for project in lfs_projects.iter() {
-          let project_path = project.value().clone();
-
-          job.add_task(project.key(), move || -> Result<(), Error> {
+        for (project_name, project_path) in lfs_projects {
+          job.add_task(project_name, move || -> Result<(), Error> {
             macro_rules! run_git {
               ($args:expr, $msg:expr) => {
                 std::process::Command::new("git")
@@ -1169,7 +1166,7 @@ impl Tree {
     let projects = self.collect_manifest_projects(config, &manifest, status_under, None)?;
 
     let mut job = Job::with_name("status");
-    for project in &projects {
+    for project in projects {
       job.add_task(project.project_path.clone(), move || -> Result<ProjectStatus, Error> {
         let path = self.path.join(&project.project_path);
         let repo =
@@ -1428,12 +1425,17 @@ impl Tree {
     confirm_upload(uploads.iter().map(|u| &u.summary).collect(), autosubmit)?;
 
     let mut job = Job::with_name("uploading");
-    for mut upload in uploads {
-      job.add_task(upload.project_path.clone(), move || -> Result<String, Error> {
+    for UploadInfo {
+      project_path,
+      summary: _,
+      mut command,
+    } in uploads
+    {
+      job.add_task(project_path, move || -> Result<String, Error> {
         if dry_run {
-          Ok(format!("running: {:?}", upload.command))
+          Ok(format!("running: {:?}", command))
         } else {
-          let git_output = upload.command.output().context("failed to spawn git push")?;
+          let git_output = command.output().context("failed to spawn git push")?;
           Ok(String::from_utf8_lossy(&git_output.stderr).to_string())
         }
       });
@@ -1473,8 +1475,8 @@ impl Tree {
       pruned_branches: Vec<String>,
     }
 
-    for project in projects {
-      job.add_task(project.project_path.clone(), move || -> Result<PruneResult, Error> {
+    for project in &projects {
+      job.add_task(&project.project_path, move || -> Result<PruneResult, Error> {
         let path = self.path.join(&project.project_path);
         let tree_repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
@@ -1482,7 +1484,7 @@ impl Tree {
         let remote_config = config
           .find_remote(&project.remote)
           .context(format!("failed to find remote {}", project.remote))?;
-        let local_project = Depot::apply_project_renames(remote_config, project.project_name);
+        let local_project = Depot::apply_project_renames(remote_config, &project.project_name);
         let obj_repo_path = depot.objects_mirror(remote_config, &local_project);
         let obj_repo = git2::Repository::open_bare(&obj_repo_path)
           .context(format!("failed to open object repository {:?}", obj_repo_path))?;
@@ -1613,9 +1615,9 @@ impl Tree {
     projects: Vec<ProjectInfo>,
   ) -> Result<i32, Error> {
     let mut job = Job::with_name("rebasing");
-    for project in projects {
+    for project in &projects {
       let manifest = &manifest;
-      job.add_task(project.project_path.clone(), move || -> Result<bool, Error> {
+      job.add_task(&project.project_path, move || -> Result<bool, Error> {
         let path = self.path.join(&project.project_path);
         let repo =
           git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
@@ -1709,8 +1711,8 @@ impl Tree {
       output: Vec<u8>,
     }
 
-    for project in projects {
-      job.add_task(project.project_path.clone(), move || -> Result<CommandResult, Error> {
+    for project in &projects {
+      job.add_task(&project.project_path, move || -> Result<CommandResult, Error> {
         let path = self.path.join(&project.project_path);
         let rel_to_root = pathdiff::diff_paths(&self.path, &path)
           .ok_or_else(|| format_err!("failed to calculate relative path to root"))?;
@@ -1720,10 +1722,10 @@ impl Tree {
           .arg(command)
           .env("PORE_ROOT", self.path.as_os_str())
           .env("PORE_ROOT_REL", rel_to_root.as_os_str())
-          .env("REPO_PROJECT", project.project_name)
-          .env("REPO_PATH", project.project_path)
-          .env("REPO_RREV", project.revision)
-          .env("REPO_REMOTE", project.remote)
+          .env("REPO_PROJECT", &project.project_name)
+          .env("REPO_PATH", &project.project_path)
+          .env("REPO_RREV", &project.revision)
+          .env("REPO_REMOTE", &project.remote)
           .current_dir(&path)
           .output()?;
 
@@ -1823,69 +1825,66 @@ impl Tree {
       output: Vec<u8>,
     }
 
-    for project in projects {
+    for project in &projects {
       let project_path = self.path.join(&project.project_path);
       let hook_path = &hook_path;
 
-      job.add_task(
-        project.project_path.clone(),
-        move || -> Result<PresubmitResult, Error> {
-          let repo = git2::Repository::open(project_path.deref()).context("failed to open repository".to_string())?;
+      job.add_task(&project.project_path, move || -> Result<PresubmitResult, Error> {
+        let repo = git2::Repository::open(project_path.deref()).context("failed to open repository".to_string())?;
 
-          let head = repo.head().context("could not determine HEAD")?;
-          let head_branch = git2::Branch::wrap(head);
-          if head_branch.name().is_err() {
-            // repo-hooks need to be on a branch.
-            return Ok(PresubmitResult {
-              rc: 0,
-              output: Vec::new(),
-            });
+        let head = repo.head().context("could not determine HEAD")?;
+        let head_branch = git2::Branch::wrap(head);
+        if head_branch.name().is_err() {
+          // repo-hooks need to be on a branch.
+          return Ok(PresubmitResult {
+            rc: 0,
+            output: Vec::new(),
+          });
+        }
+
+        let current_head = repo
+          .head()
+          .context("failed to get HEAD")?
+          .peel_to_commit()
+          .context("failed to peel HEAD to commit")?;
+
+        let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
+        let upstream_commit = upstream_object
+          .peel_to_commit()
+          .context("failed to peel upstream object to commit")?;
+
+        let commits = util::find_independent_commits(&repo, &current_head, &upstream_commit)?;
+        if commits.is_empty() {
+          Ok(PresubmitResult {
+            rc: 0,
+            output: Vec::new(),
+          })
+        } else {
+          let mut cmd = std::process::Command::new(hook_path.deref());
+          cmd.current_dir(&project_path);
+          cmd.arg("--project").arg(&project_path);
+
+          for commit in commits {
+            cmd.arg(commit.to_string());
           }
 
-          let current_head = repo
-            .head()
-            .context("failed to get HEAD")?
-            .peel_to_commit()
-            .context("failed to peel HEAD to commit")?;
+          let result = cmd.output()?;
 
-          let upstream_object = util::parse_revision(&repo, &project.remote, &project.revision)?;
-          let upstream_commit = upstream_object
-            .peel_to_commit()
-            .context("failed to peel upstream object to commit")?;
-
-          let commits = util::find_independent_commits(&repo, &current_head, &upstream_commit)?;
-          if commits.is_empty() {
-            Ok(PresubmitResult {
-              rc: 0,
-              output: Vec::new(),
-            })
-          } else {
-            let mut cmd = std::process::Command::new(hook_path.deref());
-            cmd.current_dir(&project_path);
-            cmd.arg("--project").arg(&project_path);
-
-            for commit in commits {
-              cmd.arg(commit.to_string());
+          // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
+          //       stdout and stderr being the same pipe, to order their output chronologically.
+          let mut output = result.stdout;
+          if !result.stderr.is_empty() {
+            if !output.is_empty() {
+              output.push(b'\n');
             }
-
-            let result = cmd.output()?;
-
-            // TODO: Rust's process builder API kinda sucks, there's no way to spawn a process with
-            //       stdout and stderr being the same pipe, to order their output chronologically.
-            let mut output = result.stdout;
-            if !result.stderr.is_empty() {
-              if !output.is_empty() {
-                output.push(b'\n');
-              }
-              output.extend(&result.stderr);
-            }
-
-            let rc = result.status.code().unwrap();
-
-            Ok(PresubmitResult { rc, output })
+            output.extend(&result.stderr);
           }
-        },
-      );
+
+          let rc = result.status.code().unwrap();
+
+          Ok(PresubmitResult { rc, output })
+        }
+      });
     }
 
     let results = pool.execute(job);
@@ -1955,10 +1954,13 @@ impl Tree {
           project_style().apply_to(&project_name)
         );
       }
-      let (_, manifest_project) = manifest
+      let manifest_project = manifest
         .projects
         .iter_mut()
-        .find(|(_k, v)| v.path.as_ref() == Some(&project_name))
+        .find_map(|(_k, project)| {
+          let path = project.path.as_ref()?;
+          (path.as_str() == project_name).then_some(project)
+        })
         .ok_or_else(|| format_err!("failed to find project {} in manifest", project_name))?;
       manifest_project.revision = Some(project_status.commit.to_string());
     }
