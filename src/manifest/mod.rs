@@ -137,7 +137,7 @@ impl Project {
       .clone()
       .ok_or(())
       .or_else(|_| self.find_revision(manifest))
-      .context(format!("project {} has no dest_branch or revision", self.name))?;
+      .with_context(|| format!("project {} has no dest_branch or revision", self.name))?;
 
     Ok(dest_branch)
   }
