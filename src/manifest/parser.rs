@@ -27,7 +27,7 @@ pub(crate) fn parse(directory: &Path, file: &Path) -> Result<Manifest, Error> {
 }
 
 fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<(), Error> {
-  let mut reader = Reader::from_file(file).context(format!("failed to read manifest file {:?}", file))?;
+  let mut reader = Reader::from_file(file).with_context(|| format!("failed to read manifest file {:?}", file))?;
   reader.trim_text(true);
 
   let mut found_manifest = false;
@@ -35,7 +35,7 @@ fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<
   loop {
     let event = reader
       .read_event(&mut buf)
-      .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
+      .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => {
@@ -91,7 +91,7 @@ fn parse_manifest(
   loop {
     let event = reader
       .read_event(&mut buf)
-      .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
+      .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => {
@@ -191,7 +191,7 @@ fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Resul
   loop {
     let event = reader
       .read_event(&mut buf)
-      .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
+      .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => bail!(
@@ -419,7 +419,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
     loop {
       let event = reader
         .read_event(&mut buf)
-        .context(format!("failed to parse XML at position {}", reader.buffer_position()))?;
+        .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
       match event {
         Event::Start(e) => bail!(

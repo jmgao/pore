@@ -58,7 +58,7 @@ impl Depot {
     } else {
       git2::Repository::init(dst)
     };
-    let repo = repo.context(format!("failed to create repository at {:?}", dst))?;
+    let repo = repo.with_context(|| format!("failed to create repository at {:?}", dst))?;
 
     let git_path = if bare { dst.to_path_buf() } else { dst.join(".git") };
 
@@ -67,7 +67,7 @@ impl Depot {
     let source_path = src.join("objects");
     let alternates_contents = format!("{}\n", source_path.to_str().unwrap());
     std::fs::write(&alternates_path, &alternates_contents)
-      .context(format!("failed to set alternates for new repository {:?}", dst))?;
+      .with_context(|| format!("failed to set alternates for new repository {:?}", dst))?;
 
     Ok(repo)
   }
@@ -96,7 +96,7 @@ impl Depot {
       return Ok(());
     }
 
-    std::fs::create_dir_all(dst).context(format!("failed to create directory {:?}", dst))?;
+    std::fs::create_dir_all(dst).with_context(|| format!("failed to create directory {:?}", dst))?;
 
     let mut src_mtimes = HashMap::new();
     let mut src_directories = HashSet::new();
@@ -209,7 +209,7 @@ impl Depot {
     // Disable automatic `git gc`.
     let mut config = objects_repo
       .config()
-      .context(format!("failed to get config for repo at {:?}", objects_path))?;
+      .with_context(|| format!("failed to get config for repo at {:?}", objects_path))?;
     config.set_i32("gc.auto", 0).context("failed to set gc.auto")?;
 
     // Always use git directly.
@@ -306,10 +306,10 @@ impl Depot {
     let head = util::parse_revision(&repo, &remote_config.name, branch)?;
     repo
       .checkout_tree(&head, None)
-      .context(format!("failed to checkout HEAD at {:?}", repo.path()))?;
+      .with_context(|| format!("failed to checkout HEAD at {:?}", repo.path()))?;
     repo
       .set_head_detached(head.id())
-      .context(format!("failed to set HEAD to {:?}", repo.path()))?;
+      .with_context(|| format!("failed to set HEAD to {:?}", repo.path()))?;
     Ok(())
   }
 

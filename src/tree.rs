@@ -333,7 +333,7 @@ impl<'repo> BranchInfo<'repo> {
     let commit = branch
       .get()
       .peel_to_commit()
-      .context(format!("failed to get commit for {}", name))?;
+      .with_context(|| format!("failed to get commit for {}", name))?;
 
     Ok(BranchInfo {
       name: name.to_string(),
@@ -351,14 +351,16 @@ impl<'repo> BranchInfo<'repo> {
     branch_name: &str,
     branch_type: git2::BranchType,
   ) -> Result<BranchInfo<'repo>, Error> {
-    BranchInfo::from_branch(repo.find_branch(branch_name, branch_type).context(format!(
-      "could not find {} branch {}",
-      match branch_type {
-        git2::BranchType::Local => "local",
-        git2::BranchType::Remote => "remote",
-      },
-      branch_name
-    ))?)
+    BranchInfo::from_branch(repo.find_branch(branch_name, branch_type).with_context(|| {
+      format!(
+        "could not find {} branch {}",
+        match branch_type {
+          git2::BranchType::Local => "local",
+          git2::BranchType::Remote => "remote",
+        },
+        branch_name
+      )
+    })?)
   }
 
   fn name_without_remote(&self) -> &str {
@@ -450,7 +452,7 @@ fn summarize_upload(
   for commit_oid in commits {
     let commit = repo
       .find_commit(*commit_oid)
-      .context(format!("could not find commit matching {}", commit_oid))?;
+      .with_context(|| format!("could not find commit matching {}", commit_oid))?;
     commit_summaries.push(CommitSummary {
       id: commit.id(),
       summary: commit
@@ -486,7 +488,7 @@ impl Tree {
     util::assert_empty_directory(&tree_root)?;
     let pore_path = tree_root.join(".pore");
 
-    std::fs::create_dir_all(&pore_path).context(format!("failed to create directory {:?}", pore_path))?;
+    std::fs::create_dir_all(&pore_path).with_context(|| format!("failed to create directory {:?}", pore_path))?;
 
     let manifest_path = pore_path.join("manifest");
     let manifest_file = PathBuf::from("manifest").join(file);
@@ -585,8 +587,8 @@ impl Tree {
     let tree_root = std::fs::canonicalize(&self.path).context("failed to canonicalize tree path")?;
     let mut paths = Vec::new();
     for path in under.unwrap_or_default() {
-      let requested_path =
-        std::fs::canonicalize(&path).context(format!("failed to canonicalize requested path '{}'", path.display()))?;
+      let requested_path = std::fs::canonicalize(&path)
+        .with_context(|| format!("failed to canonicalize requested path '{}'", path.display()))?;
       paths.push(
         pathdiff::diff_paths(&requested_path, &tree_root)
           .ok_or_else(|| format_err!("failed to calculate path diff for {}", path.display()))?,
@@ -695,10 +697,10 @@ impl Tree {
         job.add_task(project_name, move || -> Result<(), Error> {
           let remote = config
             .find_remote(remote_name)
-            .context(format!("failed to find remote {}", remote_name))?;
+            .with_context(|| format!("failed to find remote {}", remote_name))?;
           let depot = config
             .find_depot(&remote.depot)
-            .context(format!("failed to find depot for remote {}", remote_name))?;
+            .with_context(|| format!("failed to find depot for remote {}", remote_name))?;
 
           let target_vec: Option<Vec<String>> = match target {
             FetchTarget::Upstream => panic!("unreified FetchTarget"),
@@ -708,7 +710,7 @@ impl Tree {
           let target = target_vec.as_deref();
           depot
             .fetch_repo(remote, project_name, target, fetch_tags, None)
-            .context(format!("failed to fetch for project {}", project_name,))?;
+            .with_context(|| format!("failed to fetch for project {}", project_name,))?;
           Ok(())
         });
       }
@@ -734,10 +736,10 @@ impl Tree {
         job.add_task(&project.project_path, move || {
           let remote = config
             .find_remote(&project.remote)
-            .context(format!("failed to find remote {}", project.remote))?;
+            .with_context(|| format!("failed to find remote {}", project.remote))?;
           let depot = config
             .find_depot(&remote.depot)
-            .context(format!("failed to find depot for remote {}", project.remote))?;
+            .with_context(|| format!("failed to find depot for remote {}", project.remote))?;
 
           let project_name = &project.project_name;
           let revision = &project.revision;
@@ -768,10 +770,12 @@ impl Tree {
               };
 
               let new_head = util::parse_revision(&repo, &remote.name, revision)
-                .context(format!(
-                  "failed to find revision to sync to (wanted {}/{} in {:?})",
-                  remote.name, revision, project_path
-                ))?
+                .with_context(|| {
+                  format!(
+                    "failed to find revision to sync to (wanted {}/{} in {:?})",
+                    remote.name, revision, project_path
+                  )
+                })?
                 .peel_to_commit()?;
 
               if Some(new_head.id()) == current_head_oid {
@@ -809,14 +813,14 @@ impl Tree {
                     new_head.as_object(),
                     Some(git2::build::CheckoutBuilder::new().dry_run()),
                   )
-                  .context(format!("failed to dry run checkout to {:?}", new_head))?;
+                  .with_context(|| format!("failed to dry run checkout to {:?}", new_head))?;
 
                 repo
                   .checkout_tree(new_head.as_object(), None)
-                  .context(format!("failed to checkout to {:?}", new_head))?;
+                  .with_context(|| format!("failed to checkout to {:?}", new_head))?;
                 repo
                   .reset(new_head.as_object(), git2::ResetType::Soft, None)
-                  .context(format!("failed to move HEAD to {:?}", new_head))?;
+                  .with_context(|| format!("failed to move HEAD to {:?}", new_head))?;
               }
             } else {
               depot.clone_repo(remote, project_name, revision, &project_path)?;
@@ -842,10 +846,12 @@ impl Tree {
               // TODO: repo uses origin as the upstream, regardless of what the remote is called.
               branch
                 .set_upstream(Some(&format!("{}/{}", project.remote, project.revision)))
-                .context(format!(
-                  "failed to set manifest branch upstream to {}/{}",
-                  project.remote, project.revision
-                ))?;
+                .with_context(|| {
+                  format!(
+                    "failed to set manifest branch upstream to {}/{}",
+                    project.remote, project.revision
+                  )
+                })?;
               repo
                 .set_head("refs/heads/default")
                 .context("failed to set manifest HEAD")?;
@@ -862,7 +868,7 @@ impl Tree {
               let symlink_path = hooks_dir.join(filename);
               let _ = std::fs::remove_file(&symlink_path);
               create_symlink(&target, &symlink_path)
-                .context(format!("failed to create symlink at {:?}", &symlink_path))?;
+                .with_context(|| format!("failed to create symlink at {:?}", &symlink_path))?;
             }
 
             if !no_lfs && Path::exists(&project_path.join(".lfsconfig")) {
@@ -951,7 +957,7 @@ impl Tree {
             .context("failed to create lost+found directory")
             .and_then(|_| {
               std::fs::rename(&src_path, &dst_path)
-                .context(format!("failed to move project from {:?} to {:?}", src_path, dst_path))
+                .with_context(|| format!("failed to move project from {:?} to {:?}", src_path, dst_path))
             });
 
           if let Err(e) = result {
@@ -998,12 +1004,13 @@ impl Tree {
 
   fn write_hook(&self, directory: &Path, filename: &str, contents: &str) -> Result<(), Error> {
     let path = self.path.join(directory);
-    std::fs::create_dir_all(&path).context(format!("failed to create directory: {:?}", path))?;
+    std::fs::create_dir_all(&path).with_context(|| format!("failed to create directory: {:?}", path))?;
     let file_path = path.join(filename);
-    let mut file = std::fs::File::create(&file_path).context(format!("failed to open file at {:?}", file_path))?;
+    let mut file =
+      std::fs::File::create(&file_path).with_context(|| format!("failed to open file at {:?}", file_path))?;
     file
       .write_all(contents.as_bytes())
-      .context(format!("failed to write hook at {:?}", file_path))?;
+      .with_context(|| format!("failed to write hook at {:?}", file_path))?;
 
     // Currently no std APIs for dealing with file permissions on Windows.
     // Not running this on Windows probably isn't an issue since everything
@@ -1169,12 +1176,12 @@ impl Tree {
     for project in projects {
       job.add_task(project.project_path.clone(), move || -> Result<ProjectStatus, Error> {
         let path = self.path.join(&project.project_path);
-        let repo =
-          git2::Repository::open(&path).context(format!("failed to open repository {}", project.project_path))?;
+        let repo = git2::Repository::open(&path)
+          .with_context(|| format!("failed to open repository {}", project.project_path))?;
 
         let head = repo
           .head()
-          .context(format!("failed to get HEAD for repository {}", project.project_path))?;
+          .with_context(|| format!("failed to get HEAD for repository {}", project.project_path))?;
         let commit = head.peel_to_commit().context("failed to peel HEAD to commit")?;
         let branch = if head.is_branch() {
           Some(head.shorthand().unwrap().to_string())
@@ -1184,7 +1191,7 @@ impl Tree {
 
         let statuses = repo
           .statuses(Some(git2::StatusOptions::new().include_untracked(true)))
-          .context(format!("failed to get status of repository {}", project.project_path))?;
+          .with_context(|| format!("failed to get status of repository {}", project.project_path))?;
 
         let files: Vec<FileStatus> = statuses
           .iter()
@@ -1289,7 +1296,7 @@ impl Tree {
 
     let mut branch = repo
       .branch(&branch_name, &commit, false)
-      .context(format!("failed to create branch {}", branch_name))?;
+      .with_context(|| format!("failed to create branch {}", branch_name))?;
     branch
       .set_upstream(Some(&format!("{}/{}", remote, upstream)))
       .context("failed to set branch upstream")?;
@@ -1297,7 +1304,7 @@ impl Tree {
     repo.checkout_tree(&object, None)?;
     repo
       .set_head(&format!("refs/heads/{}", branch_name))
-      .context(format!("failed to set HEAD to {}", branch_name))?;
+      .with_context(|| format!("failed to set HEAD to {}", branch_name))?;
 
     Ok(0)
   }
@@ -1478,16 +1485,16 @@ impl Tree {
     for project in &projects {
       job.add_task(&project.project_path, move || -> Result<PruneResult, Error> {
         let path = self.path.join(&project.project_path);
-        let tree_repo =
-          git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
+        let tree_repo = git2::Repository::open(&path)
+          .with_context(|| format!("failed to open repository {:?}", project.project_path))?;
 
         let remote_config = config
           .find_remote(&project.remote)
-          .context(format!("failed to find remote {}", project.remote))?;
+          .with_context(|| format!("failed to find remote {}", project.remote))?;
         let local_project = Depot::apply_project_renames(remote_config, &project.project_name);
         let obj_repo_path = depot.objects_mirror(remote_config, &local_project);
         let obj_repo = git2::Repository::open_bare(&obj_repo_path)
-          .context(format!("failed to open object repository {:?}", obj_repo_path))?;
+          .with_context(|| format!("failed to open object repository {:?}", obj_repo_path))?;
 
         let branches = tree_repo.branches(Some(git2::BranchType::Local))?;
 
@@ -1524,7 +1531,7 @@ impl Tree {
           let mut branch = tree_repo.find_branch(branch_name, git2::BranchType::Local)?;
           branch
             .delete()
-            .context(format!("failed to delete branch {}", branch_name))?;
+            .with_context(|| format!("failed to delete branch {}", branch_name))?;
         }
 
         Ok(PruneResult {
@@ -1619,8 +1626,8 @@ impl Tree {
       let manifest = &manifest;
       job.add_task(&project.project_path, move || -> Result<bool, Error> {
         let path = self.path.join(&project.project_path);
-        let repo =
-          git2::Repository::open(&path).context(format!("failed to open repository {:?}", project.project_path))?;
+        let repo = git2::Repository::open(&path)
+          .with_context(|| format!("failed to open repository {:?}", project.project_path))?;
 
         if repo.head_detached().context("failed to check if HEAD is detached")? {
           // Don't rebase detached HEADs. This behavior matches repo.
