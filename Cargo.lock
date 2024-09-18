@@ -1073,7 +1073,7 @@ dependencies = [
 [[package]]
 name = "progpool"
 version = "0.2.2"
-source = "git+https://github.com/tamird/progpool.git#51035640194bc083093e584faa7d85818ae7411b"
+source = "git+https://github.com/tamird/progpool.git#8b4e450fb40e6804fd75316813aeaf7054ef0e62"
 dependencies = [
  "indicatif",
  "rayon",

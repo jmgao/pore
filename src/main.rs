@@ -659,7 +659,7 @@ fn cmd_import(config: &Config, pool: &mut Pool, target_path: Option<PathBuf>, co
   }
 
   let mut job = Job::with_name("import");
-  for (remote, projects) in remote_projects {
+  for (remote, projects) in &remote_projects {
     let remote_config = config.find_remote(&remote)?;
     let depot = config.find_depot(&remote_config.depot)?;
     std::fs::create_dir_all(&depot.path).context("failed to create depot directory")?;
@@ -679,14 +679,14 @@ fn cmd_import(config: &Config, pool: &mut Pool, target_path: Option<PathBuf>, co
         .join(".repo")
         .join("project-objects")
         .join(format!("{}.git", project));
-      let depot_path = depot.objects_mirror(remote_config, &Depot::apply_project_renames(remote_config, &project));
+      let depot_path = depot.objects_mirror(remote_config, &Depot::apply_project_renames(remote_config, project));
 
       if !src_path.is_dir() {
         eprintln!("Skipping missing project: {}", project);
         continue;
       }
 
-      job.add_task(project.clone(), move || -> Result<(), Error> {
+      job.add_task(project, move || -> Result<(), Error> {
         if !depot_path.is_dir() {
           // Create a new repository in its location.
           git2::Repository::init_bare(&depot_path).context("failed to create git repository")?;
