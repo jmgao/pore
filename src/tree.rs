@@ -805,13 +805,12 @@ impl Tree {
                 }
 
                 // Do a dry run first to look for dirty changes.
-                let probe = repo.checkout_tree(
-                  new_head.as_object(),
-                  Some(git2::build::CheckoutBuilder::new().dry_run()),
-                );
-                if let Err(err) = probe {
-                  bail!(err);
-                }
+                repo
+                  .checkout_tree(
+                    new_head.as_object(),
+                    Some(git2::build::CheckoutBuilder::new().dry_run()),
+                  )
+                  .context(format!("failed to dry run checkout to {:?}", new_head))?;
 
                 repo
                   .checkout_tree(new_head.as_object(), None)
