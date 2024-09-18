@@ -53,4 +53,4 @@ joinery = "3.0"
 dashmap = "5.4.0"
 
 [patch.crates-io]
-progpool = { git = "https://github.com/tamird/progpool.git#51035640194bc083093e584faa7d85818ae7411b" }
+progpool = { git = "https://github.com/tamird/progpool.git" }
