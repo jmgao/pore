@@ -34,13 +34,13 @@ fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<
   let mut buf = Vec::new();
   loop {
     let event = reader
-      .read_event(&mut buf)
+      .read_event_into(&mut buf)
       .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => {
         let tag_name = e.name();
-        match tag_name {
+        match tag_name.into_inner() {
           b"manifest" => {
             if found_manifest {
               bail!("multiple manifest tags in manifest");
@@ -50,17 +50,11 @@ fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<
             }
           }
 
-          _ => bail!(
-            "unexpected start tag in manifest.xml: {}",
-            std::str::from_utf8(tag_name).unwrap_or("???")
-          ),
+          _ => bail!("unexpected start tag in manifest.xml: {:?}", tag_name),
         }
       }
 
-      Event::Empty(e) => bail!(
-        "unexpected empty element in manifest.xml: {}",
-        std::str::from_utf8(e.name()).unwrap_or("???")
-      ),
+      Event::Empty(e) => bail!("unexpected empty element in manifest.xml: {:?}", e.name()),
 
       Event::Eof => break,
 
@@ -90,13 +84,13 @@ fn parse_manifest(
   let mut buf = Vec::new();
   loop {
     let event = reader
-      .read_event(&mut buf)
+      .read_event_into(&mut buf)
       .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
       Event::Start(e) => {
         let tag_name = e.name();
-        match tag_name {
+        match tag_name.into_inner() {
           b"notice" => {
             // TODO: Actually print this?
             parse_notice(&e, reader)?;
@@ -111,57 +105,54 @@ fn parse_manifest(
             manifest.projects.insert(path, project);
           }
 
-          _ => bail!(
-            "unexpected start tag in <manifest>: {}",
-            std::str::from_utf8(tag_name).unwrap_or("???")
-          ),
+          _ => bail!("unexpected start tag in <manifest>: {:?}", tag_name),
         }
       }
 
-      Event::Empty(e) => match e.name() {
-        b"include" => {
-          parse_include(manifest, &e, reader, directory)?;
-        }
-
-        b"project" => {
-          let project = parse_project(&e, reader, false)?;
-          let path = PathBuf::from(project.path());
-          if manifest.projects.contains_key(&path) {
-            bail!("duplicate project {:?}", path);
+      Event::Empty(e) => {
+        let tag_name = e.name();
+        match tag_name.into_inner() {
+          b"include" => {
+            parse_include(manifest, &e, reader, directory)?;
           }
-          manifest.projects.insert(path, project);
-        }
 
-        b"extend-project" => {
-          let extensions = parse_extend_project(&e, reader)?;
-          let old_project = manifest.projects.values().find(|p| p.name == extensions.name);
-          if old_project.is_none() {
-            bail!("extend-project: no previous project named {}", extensions.name);
-          } else {
-            let new_project = extensions.extend(old_project.unwrap());
-            manifest.projects.insert(PathBuf::from(new_project.path()), new_project);
+          b"project" => {
+            let project = parse_project(&e, reader, false)?;
+            let path = PathBuf::from(project.path());
+            if manifest.projects.contains_key(&path) {
+              bail!("duplicate project {:?}", path);
+            }
+            manifest.projects.insert(path, project);
           }
-        }
 
-        b"remote" => {
-          let remote = parse_remote(&e, reader)?;
-          if manifest.remotes.contains_key(&remote.name) {
-            bail!("duplicate remotes with name {}", remote.name);
+          b"extend-project" => {
+            let extensions = parse_extend_project(&e, reader)?;
+            let old_project = manifest.projects.values().find(|p| p.name == extensions.name);
+            if old_project.is_none() {
+              bail!("extend-project: no previous project named {}", extensions.name);
+            } else {
+              let new_project = extensions.extend(old_project.unwrap());
+              manifest.projects.insert(PathBuf::from(new_project.path()), new_project);
+            }
           }
-          manifest.remotes.insert(remote.name.clone(), remote);
+
+          b"remote" => {
+            let remote = parse_remote(&e, reader)?;
+            if manifest.remotes.contains_key(&remote.name) {
+              bail!("duplicate remotes with name {}", remote.name);
+            }
+            manifest.remotes.insert(remote.name.clone(), remote);
+          }
+
+          b"default" => populate_option!(manifest.default, parse_default(&e, reader)?),
+          b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, reader)?),
+          b"superproject" => populate_option!(manifest.superproject, parse_superproject(&e, reader)?),
+          b"contactinfo" => populate_option!(manifest.contactinfo, parse_contactinfo(&e, reader)?),
+          b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, reader)?),
+
+          _ => bail!("unexpected empty element in <manifest>: {:?}", tag_name),
         }
-
-        b"default" => populate_option!(manifest.default, parse_default(&e, reader)?),
-        b"manifest-server" => populate_option!(manifest.manifest_server, parse_manifest_server(&e, reader)?),
-        b"superproject" => populate_option!(manifest.superproject, parse_superproject(&e, reader)?),
-        b"contactinfo" => populate_option!(manifest.contactinfo, parse_contactinfo(&e, reader)?),
-        b"repo-hooks" => populate_option!(manifest.repo_hooks, parse_repo_hooks(&e, reader)?),
-
-        _ => bail!(
-          "unexpected empty element in <manifest>: {}",
-          std::str::from_utf8(e.name()).unwrap_or("???")
-        ),
-      },
+      }
 
       Event::End(_) => break,
 
@@ -190,19 +181,13 @@ fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Resul
   let mut result = None;
   loop {
     let event = reader
-      .read_event(&mut buf)
+      .read_event_into(&mut buf)
       .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
     match event {
-      Event::Start(e) => bail!(
-        "unexpected start tag in <notice>: {}",
-        std::str::from_utf8(e.name()).unwrap_or("???")
-      ),
+      Event::Start(e) => bail!("unexpected start tag in <notice>: {:?}", e.name()),
 
-      Event::Empty(e) => bail!(
-        "unexpected empty tag in <notice>: {}",
-        std::str::from_utf8(e.name()).unwrap_or("???")
-      ),
+      Event::Empty(e) => bail!("unexpected empty tag in <notice>: {:?}", e.name()),
 
       Event::End(_) => break,
 
@@ -210,7 +195,7 @@ fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Resul
 
       Event::Text(value) => {
         ensure!(result.is_none(), "multiple text events in <notice>");
-        result = Some(value.unescape_and_decode(reader)?);
+        result = Some(value.unescape()?.into_owned());
       }
 
       e => bail!(
@@ -234,13 +219,11 @@ fn parse_include(
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"name" => populate_option!(filename, value),
-      key => eprintln!(
-        "warning: unexpected attribute in <include>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <include>: {:?}", key),
     }
   }
 
@@ -263,8 +246,9 @@ fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Rem
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"name" => populate_option!(name, value),
       b"alias" => populate_option!(remote.alias, value),
       b"fetch" => populate_option!(fetch, value),
@@ -275,10 +259,7 @@ fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Rem
       b"push" => (),
       b"pushurl" => (),
 
-      key => eprintln!(
-        "warning: unexpected attribute in <remote>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <remote>: {:?}", key),
     }
   }
 
@@ -293,8 +274,9 @@ fn parse_default(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<De
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"revision" => populate_option!(default.revision, value),
       b"remote" => populate_option!(default.remote, value),
       b"sync-j" => populate_option!(default.sync_j, value.parse::<u32>().context("failed to parse sync-j")?),
@@ -306,10 +288,7 @@ fn parse_default(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<De
         // branch like repo does.
       }
 
-      key => eprintln!(
-        "warning: unexpected attribute in <default>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <default>: {:?}", key),
     }
   }
 
@@ -320,13 +299,11 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<impl BufRead>) -> R
   let mut url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"url" => populate_option!(url, value),
-      key => eprintln!(
-        "warning: unexpected attribute in <manifest-server>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <manifest-server>: {:?}", key),
     }
   }
 
@@ -340,14 +317,12 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
   let mut remote = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"name" => populate_option!(name, value),
       b"remote" => populate_option!(remote, value),
-      key => eprintln!(
-        "warning: unexpected attribute in <superproject>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <superproject>: {:?}", key),
     }
   }
 
@@ -360,13 +335,11 @@ fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resul
   let mut bug_url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"bugurl" => populate_option!(bug_url, value),
-      key => eprintln!(
-        "warning: unexpected attribute in <contactinfo>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <contactinfo>: {:?}", key),
     }
   }
 
@@ -380,8 +353,9 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let mut value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let mut value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"name" => {
         while value.ends_with('/') {
           value.pop();
@@ -405,10 +379,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
         // upstream branch like repo does.
       }
 
-      key => eprintln!(
-        "warning: unexpected attribute in <project>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <project>: {:?}", key),
     }
   }
 
@@ -418,68 +389,63 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
     let mut buf = Vec::new();
     loop {
       let event = reader
-        .read_event(&mut buf)
+        .read_event_into(&mut buf)
         .with_context(|| format!("failed to parse XML at position {}", reader.buffer_position()))?;
 
       match event {
-        Event::Start(e) => bail!(
-          "unexpected start tag in <project>: {}",
-          std::str::from_utf8(e.name()).unwrap_or("???")
-        ),
+        Event::Start(e) => bail!("unexpected start tag in <project>: {:?}", e.name()),
 
-        Event::Empty(e) => match e.name() {
-          b"copyfile" => {
-            let op = parse_file_operation(&e, reader, true)?;
-            project.file_operations.push(op);
-          }
+        Event::Empty(e) => {
+          let tag_name = e.name();
+          match tag_name.into_inner() {
+            b"copyfile" => {
+              let op = parse_file_operation(&e, reader, true)?;
+              project.file_operations.push(op);
+            }
 
-          b"linkfile" => {
-            let op = parse_file_operation(&e, reader, false)?;
-            project.file_operations.push(op);
-          }
+            b"linkfile" => {
+              let op = parse_file_operation(&e, reader, false)?;
+              project.file_operations.push(op);
+            }
 
-          b"annotation" => {
-            let mut name: Option<String> = None;
-            let mut value: Option<String> = None;
-            for attribute in e.attributes() {
-              let attribute = attribute?;
-              let attrib_value = attribute.unescape_and_decode_value(reader)?;
-              match attribute.key {
-                b"name" => name = Some(attrib_value),
-                b"value" => value = Some(attrib_value),
+            b"annotation" => {
+              let mut name: Option<String> = None;
+              let mut value: Option<String> = None;
+              for attribute in e.attributes() {
+                let attribute = attribute?;
+                let attrib_value = attribute.decode_and_unescape_value(reader)?.into_owned();
+                let key = attribute.key;
+                match key.into_inner() {
+                  b"name" => name = Some(attrib_value),
+                  b"value" => value = Some(attrib_value),
 
-                x => {
-                  bail!(
-                    "unexpected attribute in <annotation>: {}",
-                    std::str::from_utf8(x).unwrap_or("???")
-                  );
+                  _ => {
+                    bail!("unexpected attribute in <annotation>: {:?}", key);
+                  }
+                }
+              }
+
+              match (name, value) {
+                (None, _) => {
+                  eprintln!("<annotation> missing name");
+                }
+
+                (_, None) => {
+                  eprintln!("<annotation> missing value");
+                }
+
+                (Some(name), Some(value)) => {
+                  if project.annotations.contains_key(&name) {
+                    bail!("duplicate <annotation>: {}", name);
+                  }
+                  project.annotations.insert(name, value);
                 }
               }
             }
 
-            match (name, value) {
-              (None, _) => {
-                eprintln!("<annotation> missing name");
-              }
-
-              (_, None) => {
-                eprintln!("<annotation> missing value");
-              }
-
-              (Some(name), Some(value)) => {
-                if project.annotations.contains_key(&name) {
-                  bail!("duplicate <annotation>: {}", name);
-                }
-                project.annotations.insert(name, value);
-              }
-            }
+            _ => bail!("unexpected empty element in <project>: {:?}", tag_name),
           }
-
-          _ => bail!(
-            "unexpected empty element in <project>: {}",
-            std::str::from_utf8(e.name()).unwrap_or("???")
-          ),
-        },
+        }
 
         Event::End(_) => break,
 
@@ -502,8 +468,9 @@ fn parse_extend_project(event: &BytesStart, reader: &Reader<impl BufRead>) -> Re
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let mut value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let mut value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"name" => {
         while value.ends_with('/') {
           value.pop();
@@ -514,10 +481,7 @@ fn parse_extend_project(event: &BytesStart, reader: &Reader<impl BufRead>) -> Re
       b"remote" => populate_option!(extensions.remote, value),
       b"revision" => populate_option!(extensions.revision, value),
       b"groups" => populate_option!(extensions.groups, value.split(',').map(ToString::to_string).collect()),
-      key => eprintln!(
-        "warning: unexpected attribute in <extend-project>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <extend-project>: {:?}", key),
     }
   }
 
@@ -533,15 +497,12 @@ fn parse_file_operation(event: &BytesStart, reader: &Reader<impl BufRead>, copy:
   let mut dst = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"src" => populate_option!(src, value),
       b"dest" => populate_option!(dst, value),
-      key => eprintln!(
-        "warning: unexpected attribute in <{}>: {}",
-        op_name,
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <{}>: {:?}", op_name, key),
     }
   }
 
@@ -558,14 +519,12 @@ fn parse_repo_hooks(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result
   let mut hooks = RepoHooks::default();
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.unescape_and_decode_value(reader)?;
-    match attribute.key {
+    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let key = attribute.key;
+    match key.into_inner() {
       b"in-project" => populate_option!(hooks.in_project, value),
       b"enabled-list" => populate_option!(hooks.enabled_list, value),
-      key => eprintln!(
-        "warning: unexpected attribute in <repo-hooks>: {}",
-        std::str::from_utf8(key).unwrap_or("???")
-      ),
+      _ => eprintln!("warning: unexpected attribute in <repo-hooks>: {:?}", key),
     }
   }
   Ok(hooks)
