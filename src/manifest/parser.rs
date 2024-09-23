@@ -28,7 +28,7 @@ pub(crate) fn parse(directory: &Path, file: &Path) -> Result<Manifest, Error> {
 
 fn parse_impl(manifest: &mut Manifest, directory: &Path, file: &Path) -> Result<(), Error> {
   let mut reader = Reader::from_file(file).with_context(|| format!("failed to read manifest file {:?}", file))?;
-  reader.trim_text(true);
+  reader.config_mut().trim_text(true);
 
   let mut found_manifest = false;
   let mut buf = Vec::new();
