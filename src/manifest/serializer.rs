@@ -4,11 +4,11 @@ use std::io::Write;
 
 use anyhow::Result;
 
-use quick_xml::{events, Writer};
+use quick_xml::{events, name::QName, Writer};
 
 fn populate<'a, V: Into<Cow<'a, [u8]>>>(elem: &mut events::BytesStart, key: &'static str, value: V) {
   elem.push_attribute(events::attributes::Attribute {
-    key: key.as_bytes(),
+    key: QName(key.as_bytes()),
     value: value.into(),
   })
 }
@@ -35,11 +35,11 @@ fn write_element<W: Write>(
   attributes: impl FnOnce(&mut events::BytesStart),
   children: impl FnOnce(&mut Writer<W>) -> Result<()>,
 ) -> Result<()> {
-  let mut elem = events::BytesStart::borrowed_name(name.as_bytes());
+  let mut elem = events::BytesStart::new(name);
   attributes(&mut elem);
   writer.write_event(events::Event::Start(elem))?;
   children(writer)?;
-  writer.write_event(events::Event::End(events::BytesEnd::borrowed(name.as_bytes())))?;
+  writer.write_event(events::Event::End(events::BytesEnd::new(name)))?;
   Ok(())
 }
 
