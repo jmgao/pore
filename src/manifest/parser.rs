@@ -219,7 +219,7 @@ fn parse_include(
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"name" => populate_option!(filename, value),
@@ -246,7 +246,7 @@ fn parse_remote(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<Rem
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"name" => populate_option!(name, value),
@@ -274,7 +274,7 @@ fn parse_default(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result<De
 
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"revision" => populate_option!(default.revision, value),
@@ -299,7 +299,7 @@ fn parse_manifest_server(event: &BytesStart, reader: &Reader<impl BufRead>) -> R
   let mut url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"url" => populate_option!(url, value),
@@ -317,7 +317,7 @@ fn parse_superproject(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resu
   let mut remote = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"name" => populate_option!(name, value),
@@ -335,7 +335,7 @@ fn parse_contactinfo(event: &BytesStart, reader: &Reader<impl BufRead>) -> Resul
   let mut bug_url = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"bugurl" => populate_option!(bug_url, value),
@@ -353,7 +353,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let mut value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let mut value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"name" => {
@@ -413,7 +413,7 @@ fn parse_project(event: &BytesStart, reader: &mut Reader<impl BufRead>, has_chil
               let mut value: Option<String> = None;
               for attribute in e.attributes() {
                 let attribute = attribute?;
-                let attrib_value = attribute.decode_and_unescape_value(reader)?.into_owned();
+                let attrib_value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
                 let key = attribute.key;
                 match key.into_inner() {
                   b"name" => name = Some(attrib_value),
@@ -468,7 +468,7 @@ fn parse_extend_project(event: &BytesStart, reader: &Reader<impl BufRead>) -> Re
   let mut name = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let mut value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let mut value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"name" => {
@@ -497,7 +497,7 @@ fn parse_file_operation(event: &BytesStart, reader: &Reader<impl BufRead>, copy:
   let mut dst = None;
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"src" => populate_option!(src, value),
@@ -519,7 +519,7 @@ fn parse_repo_hooks(event: &BytesStart, reader: &Reader<impl BufRead>) -> Result
   let mut hooks = RepoHooks::default();
   for attribute in event.attributes() {
     let attribute = attribute?;
-    let value = attribute.decode_and_unescape_value(reader)?.into_owned();
+    let value = attribute.decode_and_unescape_value(reader.decoder())?.into_owned();
     let key = attribute.key;
     match key.into_inner() {
       b"in-project" => populate_option!(hooks.in_project, value),
