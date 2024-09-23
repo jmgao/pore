@@ -20,10 +20,7 @@ toml = "0.5"
 regex = "1"
 serde_regex = "1"
 
-# manifest::serialize::serializer passes a quick-xml value to minidom, so the quick-xml version
-# must match the version needed by minidom.
-quick-xml = "^0.17"
-minidom = "=0.12.0"
+quick-xml = "^0.22.0"
 
 clap = { version = "4.0.32", features = ["derive", "cargo"] }
 maplit = "1.0.2"

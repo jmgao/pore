@@ -1,82 +1,144 @@
 use super::{FileOperation, Manifest};
+use std::borrow::Cow;
 use std::io::Write;
 
-use anyhow::{Context, Error};
+use anyhow::Result;
 
-use minidom::element::Element;
-use quick_xml::Writer;
+use quick_xml::{events, Writer};
 
-macro_rules! populate_from_option {
-  ($elem: expr, $option: expr, $attribute_name: expr) => {{
-    if let Some(x) = &$option {
-      $elem = $elem.attr($attribute_name, x.to_string());
-    }
-  }};
+fn populate<'a, V: Into<Cow<'a, [u8]>>>(elem: &mut events::BytesStart, key: &'static str, value: V) {
+  elem.push_attribute(events::attributes::Attribute {
+    key: key.as_bytes(),
+    value: value.into(),
+  })
 }
 
-pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<(), Error> {
-  let mut root = Element::builder("manifest").build();
+fn populate_from_str(elem: &mut events::BytesStart, key: &'static str, value: &str) {
+  populate(elem, key, value.as_bytes())
+}
 
-  for remote in manifest.remotes.values() {
-    let mut elem = Element::builder("remote");
-    elem = elem.attr("name", &remote.name);
-    elem = elem.attr("fetch", &remote.fetch);
-    populate_from_option!(elem, remote.alias, "alias");
-    populate_from_option!(elem, remote.review, "review");
-    root.append_child(elem.build());
+fn populate_from_option<V: ToString>(elem: &mut events::BytesStart, key: &'static str, value: &Option<V>) {
+  if let Some(value) = value {
+    populate(elem, key, value.to_string().into_bytes())
   }
+}
 
-  if let Some(default) = &manifest.default {
-    let mut elem = Element::builder("default");
-    populate_from_option!(elem, default.revision, "revision");
-    populate_from_option!(elem, default.remote, "remote");
-    populate_from_option!(elem, default.sync_j, "sync-j");
-    populate_from_option!(elem, default.sync_c, "sync-c");
-    root.append_child(elem.build());
+fn populate_from_str_option(elem: &mut events::BytesStart, key: &'static str, value: &Option<String>) {
+  if let Some(value) = value.as_deref() {
+    populate_from_str(elem, key, value)
   }
+}
 
-  if let Some(manifest_server) = &manifest.manifest_server {
-    root.append_child(
-      Element::builder("manifest-server")
-        .attr("url", &manifest_server.url)
-        .build(),
-    );
-  }
+fn write_element<W: Write>(
+  writer: &mut Writer<W>,
+  name: &'static str,
+  attributes: impl FnOnce(&mut events::BytesStart),
+  children: impl FnOnce(&mut Writer<W>) -> Result<()>,
+) -> Result<()> {
+  let mut elem = events::BytesStart::borrowed_name(name.as_bytes());
+  attributes(&mut elem);
+  writer.write_event(events::Event::Start(elem))?;
+  children(writer)?;
+  writer.write_event(events::Event::End(events::BytesEnd::borrowed(name.as_bytes())))?;
+  Ok(())
+}
 
-  if let Some(repo_hooks) = &manifest.repo_hooks {
-    let mut elem = Element::builder("repo-hooks");
-    populate_from_option!(elem, repo_hooks.in_project, "in-project");
-    populate_from_option!(elem, repo_hooks.enabled_list, "enabled-list");
-    root.append_child(elem.build());
-  }
+pub fn serialize(manifest: &Manifest, mut output: Box<dyn Write>) -> Result<()> {
+  write_element(
+    &mut Writer::new_with_indent(&mut output, b' ', 4),
+    "manifest",
+    |_| {},
+    |writer| {
+      for remote in manifest.remotes.values() {
+        write_element(
+          writer,
+          "remote",
+          |elem| {
+            populate_from_str(elem, "name", &remote.name);
+            populate_from_str(elem, "fetch", &remote.fetch);
+            populate_from_str_option(elem, "alias", &remote.alias);
+            populate_from_str_option(elem, "review", &remote.review);
+          },
+          |_| Ok(()),
+        )?;
+      }
 
-  for project in manifest.projects.values() {
-    let mut elem = Element::builder("project");
-    populate_from_option!(elem, Some(&project.name), "name");
-    populate_from_option!(elem, project.path, "path");
-    populate_from_option!(elem, project.remote, "remote");
-    populate_from_option!(elem, project.revision, "revision");
-    populate_from_option!(elem, project.dest_branch, "dest-branch");
-    populate_from_option!(elem, project.sync_c, "sync-c");
-    populate_from_option!(elem, project.clone_depth, "clone-depth");
+      if let Some(default) = &manifest.default {
+        write_element(
+          writer,
+          "default",
+          |elem| {
+            populate_from_str_option(elem, "revision", &default.revision);
+            populate_from_str_option(elem, "remote", &default.remote);
+            populate_from_option(elem, "sync-j", &default.sync_j);
+            populate_from_option(elem, "sync-c", &default.sync_c);
+          },
+          |_| Ok(()),
+        )?;
+      }
 
-    let groups = project.groups.as_ref().map(|vec| vec.join(","));
-    populate_from_option!(elem, groups, "groups");
+      if let Some(manifest_server) = &manifest.manifest_server {
+        write_element(
+          writer,
+          "manifest-server",
+          |elem| {
+            populate_from_str(elem, "url", &manifest_server.url);
+          },
+          |_| Ok(()),
+        )?;
+      }
 
-    for file_op in &project.file_operations {
-      let child = match file_op {
-        FileOperation::LinkFile { src, dst } => Element::builder("linkfile").attr("src", src).attr("dest", dst).build(),
-        FileOperation::CopyFile { src, dst } => Element::builder("copyfile").attr("src", src).attr("dest", dst).build(),
-      };
-      elem = elem.append(child);
-    }
+      if let Some(repo_hooks) = &manifest.repo_hooks {
+        write_element(
+          writer,
+          "repo-hooks",
+          |elem| {
+            populate_from_option(elem, "in-project", &repo_hooks.in_project);
+            populate_from_option(elem, "enabled-list", &repo_hooks.enabled_list);
+          },
+          |_| Ok(()),
+        )?;
+      }
 
-    root.append_child(elem.build());
-  }
-
-  let mut fancy_writer = Writer::new_with_indent(&mut output, b' ', 4);
-  root.to_writer(&mut fancy_writer).context("failed to write manifest")?;
-  output.write_all(b"\n")?;
+      for project in manifest.projects.values() {
+        write_element(
+          writer,
+          "project",
+          |elem| {
+            populate_from_str(elem, "name", &project.name);
+            populate_from_str_option(elem, "path", &project.path);
+            populate_from_str_option(elem, "remote", &project.remote);
+            populate_from_str_option(elem, "revision", &project.revision);
+            populate_from_option(elem, "dest-branch", &project.dest_branch);
+            populate_from_option(elem, "sync-c", &project.sync_c);
+            populate_from_option(elem, "clone-depth", &project.clone_depth);
+            if let Some(groups) = &project.groups {
+              populate(elem, "groups", groups.join(",").into_bytes())
+            }
+          },
+          |writer| {
+            for file_op in &project.file_operations {
+              let (name, src, dst) = match file_op {
+                FileOperation::LinkFile { src, dst } => ("linkfile", src, dst),
+                FileOperation::CopyFile { src, dst } => ("copyfile", src, dst),
+              };
+              write_element(
+                writer,
+                name,
+                |elem| {
+                  populate_from_str(elem, "src", src);
+                  populate_from_str(elem, "dest", dst);
+                },
+                |_| Ok(()),
+              )?;
+            }
+            Ok(())
+          },
+        )?;
+      }
+      Ok(())
+    },
+  )?;
 
   Ok(())
 }
