@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use filetime::FileTime;
-use fs2::FileExt;
+use fs4::fs_std::FileExt as _;
 use std::fs::File;
 
 use anyhow::{Context, Error};
@@ -28,6 +28,7 @@ use super::util;
 
 #[derive(Clone, Debug)]
 pub struct Depot {
+  #[allow(dead_code)]
   pub name: String,
   pub path: PathBuf,
 }
@@ -53,9 +54,9 @@ impl Depot {
     let dst: &Path = dst.as_ref();
 
     let repo = if bare {
-      git2::Repository::init_bare(&dst)
+      git2::Repository::init_bare(dst)
     } else {
-      git2::Repository::init(&dst)
+      git2::Repository::init(dst)
     };
     let repo = repo.context(format!("failed to create repository at {:?}", dst))?;
 
@@ -64,7 +65,7 @@ impl Depot {
     // Set its alternates.
     let alternates_path = git_path.join("objects").join("info").join("alternates");
     let source_path = src.join("objects");
-    let alternates_contents = source_path.to_str().unwrap().to_owned() + "\n";
+    let alternates_contents = format!("{}\n", source_path.to_str().unwrap());
     std::fs::write(&alternates_path, &alternates_contents)
       .context(format!("failed to set alternates for new repository {:?}", dst))?;
 
@@ -133,21 +134,19 @@ impl Depot {
         let dst_path = dst_file.path();
         std::fs::copy(src.join(dst_filename), &dst_path)?;
         filetime::set_file_mtime(&dst_path, *src_mtime)?;
-      } else {
-        if dst_metadata.is_dir() {
-          if !src_directories.contains(&dst_filename) {
-            std::fs::remove_dir_all(dst_file.path())?;
-          }
-        } else {
-          std::fs::remove_file(dst_file.path())?;
+      } else if dst_metadata.is_dir() {
+        if !src_directories.contains(&dst_filename) {
+          std::fs::remove_dir_all(dst_file.path())?;
         }
+      } else {
+        std::fs::remove_file(dst_file.path())?;
       }
     }
 
     for src_filename in &src_new {
       let src_mtime = src_mtimes.get(src_filename).unwrap();
-      let src_path = src.join(&src_filename);
-      let dst_path = dst.join(&src_filename);
+      let src_path = src.join(src_filename);
+      let dst_path = dst.join(src_filename);
       std::fs::copy(src_path, &dst_path)?;
       filetime::set_file_mtime(&dst_path, *src_mtime)?;
     }
@@ -167,13 +166,15 @@ impl Depot {
   }
 
   pub fn objects_mirror(&self, _remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
-    let repo_name: String = project.0.clone() + ".git";
+    let ProjectName(project) = project;
+    let repo_name: String = format!("{}.git", project);
     self.path.join("objects").join(repo_name)
   }
 
   pub fn refs_mirror(&self, remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
     let remote: &str = remote_config.name.as_ref();
-    let repo_name: String = project.0.clone() + ".git";
+    let ProjectName(project) = project;
+    let repo_name: String = format!("{}.git", project);
     self.path.join("refs").join(remote).join(repo_name)
   }
 
@@ -189,8 +190,8 @@ impl Depot {
     ensure!(!project.ends_with('/'), "invalid project path {}", project);
     let local_project: ProjectName = Depot::apply_project_renames(remote_config, project);
 
-    let objects_path = self.objects_mirror(&remote_config, &local_project);
-    let repo_url = remote_config.url.to_owned() + &project + ".git";
+    let objects_path = self.objects_mirror(remote_config, &local_project);
+    let repo_url = format!("{}{}.git", remote_config.url, project);
 
     std::fs::create_dir_all(&objects_path).context("failed to create depot directory")?;
     let dir = File::open(&objects_path).context("failed to open directory")?;
@@ -283,7 +284,7 @@ impl Depot {
     let local_project = Depot::apply_project_renames(remote_config, project);
 
     let repo = Depot::clone_alternates(
-      self.objects_mirror(&remote_config, &local_project),
+      self.objects_mirror(remote_config, &local_project),
       path.to_path_buf(),
       false,
     )?;
@@ -300,9 +301,9 @@ impl Depot {
       .remote_set_pushurl(&remote_config.name, Some(&format!("{}{}", remote_config.url, project)))
       .context("failed to set remote pushurl")?;
 
-    self.update_remote_refs(&remote_config, &project, &path)?;
+    self.update_remote_refs(remote_config, project, path)?;
 
-    let head = util::parse_revision(&repo, &remote_config.name, &branch)?;
+    let head = util::parse_revision(&repo, &remote_config.name, branch)?;
     repo
       .checkout_tree(&head, None)
       .context(format!("failed to checkout HEAD at {:?}", repo.path()))?;
