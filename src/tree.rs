@@ -843,12 +843,7 @@ impl Tree {
                 .peel_to_commit()
                 .context("failed to peel HEAD to commit")?;
 
-              let mut branch = match repo.find_branch("default", git2::BranchType::Local) {
-                Ok(branch) => branch,
-                Err(_) => repo
-                  .branch("default", &head, true)
-                  .context("failed to create manifest default branch")?,
-              };
+              let mut branch = repo.branch("default", &head, true).context("failed to create manifest default branch")?;
 
               // TODO: repo uses origin as the upstream, regardless of what the remote is called.
               branch
