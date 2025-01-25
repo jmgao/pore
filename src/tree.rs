@@ -586,12 +586,21 @@ impl Tree {
     let tree_root = std::fs::canonicalize(&self.path).context("failed to canonicalize tree path")?;
     let mut paths = Vec::new();
     for path in under.unwrap_or_default() {
-      let requested_path =
-        std::fs::canonicalize(&path).context(format!("failed to canonicalize requested path '{}'", path.display()))?;
-      paths.push(
-        pathdiff::diff_paths(&requested_path, &tree_root)
-          .ok_or_else(|| format_err!("failed to calculate path diff for {}", path.display()))?,
-      );
+      if std::fs::exists(&path)? {
+        let requested_path = std::fs::canonicalize(&path)
+          .context(format!("failed to canonicalize requested path '{}'", path.display()))?;
+        paths.push(
+          pathdiff::diff_paths(&requested_path, &tree_root)
+            .ok_or_else(|| format_err!("failed to calculate path diff for {}", path.display()))?,
+        );
+      } else if path.is_relative() {
+        paths.push(path)
+      } else {
+        return Err(format_err!(
+          "requested project path is not relative to tree root and does not exist '{}'",
+          path.display()
+        ));
+      }
     }
 
     let filtered_projects = manifest
