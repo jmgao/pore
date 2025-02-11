@@ -162,7 +162,7 @@ impl Depot {
       }
     }
 
-    return ProjectName(project.as_ref().into());
+    ProjectName(project.as_ref().into())
   }
 
   pub fn objects_mirror(&self, _remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
@@ -267,7 +267,7 @@ impl Depot {
     let refs_tags = refs_path.join("refs").join("tags");
     Depot::replace_dir(&objects_tags, &refs_tags).context("failed to replace tags")?;
 
-    fs4::fs_std::FileExt::unlock(&dir).context("failed to unlock directory")?;
+    FileExt::unlock(&dir).context("failed to unlock directory")?;
     Ok(())
   }
 
