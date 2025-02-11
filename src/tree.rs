@@ -222,7 +222,7 @@ impl serde::Serialize for GroupFilter {
 }
 
 struct GroupFilterVisitor;
-impl<'de> serde::de::Visitor<'de> for GroupFilterVisitor {
+impl serde::de::Visitor<'_> for GroupFilterVisitor {
   type Value = GroupFilter;
 
   fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -1339,7 +1339,7 @@ impl Tree {
   ) -> Result<i32, Error> {
     // TODO: Figure out how 0 (all projects) should work.
     ensure!(
-      upload_under.as_ref().map_or(false, |v| !v.is_empty()),
+      upload_under.as_ref().is_some_and(|v| !v.is_empty()),
       "pathless upload not yet implemented; must specify which projects to upload"
     );
 
