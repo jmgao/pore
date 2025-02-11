@@ -1,7 +1,7 @@
 pore
 ========
 
-[![CircleCI](https://circleci.com/gh/jmgao/pore.svg?style=svg)](https://circleci.com/gh/jmgao/pore)
+[![ci.yml](https://github.com/jmgao/pore/actions/workflows/ci.yml/badge.svg)](https://github.com/jmgao/pore/actions/workflows/ci.yml)
 
 pore is a reimplementation of Android's repository management tool, [repo](https://gerrit.googlesource.com/git-repo/),
 with a focus on performance. Tree-wide operations such as `status` and `sync` are up to [10 times faster](https://asciinema.org/a/2kSTE803umfAQQR9SR7GP8rCc) in pore. Additionally, pore always does the equivalent of repo's `--reference` transparently, so
