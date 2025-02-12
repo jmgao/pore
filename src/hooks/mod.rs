@@ -1,15 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
-lazy_static! {
-  static ref HOOKS: HashMap<String, &'static str> = {
+pub fn hooks() -> &'static HashMap<&'static str, &'static str> {
+  static HOOKS: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+  HOOKS.get_or_init(|| {
     let mut map = HashMap::new();
     // include_str! only takes string literals, so we have to repeat ourselves. (rust-lang/rust#53749)
-    map.insert("commit-msg".into(), include_str!("commit-msg"));
+    map.insert("commit-msg", include_str!("commit-msg"));
     // Intentionally omit pre-auto-gc.
     map
-  };
-}
-
-pub fn hooks() -> &'static HashMap<String, &'static str> {
-  &HOOKS
+  })
 }

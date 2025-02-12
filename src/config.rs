@@ -191,7 +191,7 @@ impl Config {
   pub fn from_path(path: &Path) -> Result<Config, Error> {
     let mut file = String::new();
     File::open(path)?.read_to_string(&mut file)?;
-    let config = toml::from_str(&file).context(format!("failed to parse config file {:?}", path))?;
+    let config = toml::from_str(&file).with_context(|| format!("failed to parse config file {:?}", path))?;
     Ok(config)
   }
 
@@ -205,7 +205,8 @@ impl Config {
       .depots
       .get(depot)
       .ok_or_else(|| format_err!("unknown depot {}", depot))?;
-    let path = Config::expand_path(&depot_config.path).context(format!("failed to expand path for depot {}", depot))?;
+    let path =
+      Config::expand_path(&depot_config.path).with_context(|| format!("failed to expand path for depot {}", depot))?;
 
     Depot::new(depot.to_string(), path)
   }

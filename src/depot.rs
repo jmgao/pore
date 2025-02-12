@@ -58,16 +58,16 @@ impl Depot {
     } else {
       git2::Repository::init(dst)
     };
-    let repo = repo.context(format!("failed to create repository at {:?}", dst))?;
+    let repo = repo.with_context(|| format!("failed to create repository at {:?}", dst))?;
 
     let git_path = if bare { dst.to_path_buf() } else { dst.join(".git") };
 
     // Set its alternates.
     let alternates_path = git_path.join("objects").join("info").join("alternates");
     let source_path = src.join("objects");
-    let alternates_contents = source_path.to_str().unwrap().to_owned() + "\n";
+    let alternates_contents = format!("{}\n", source_path.to_str().unwrap());
     std::fs::write(&alternates_path, &alternates_contents)
-      .context(format!("failed to set alternates for new repository {:?}", dst))?;
+      .with_context(|| format!("failed to set alternates for new repository {:?}", dst))?;
 
     Ok(repo)
   }
@@ -96,7 +96,7 @@ impl Depot {
       return Ok(());
     }
 
-    std::fs::create_dir_all(dst).context(format!("failed to create directory {:?}", dst))?;
+    std::fs::create_dir_all(dst).with_context(|| format!("failed to create directory {:?}", dst))?;
 
     let mut src_mtimes = HashMap::new();
     let mut src_directories = HashSet::new();
@@ -166,13 +166,15 @@ impl Depot {
   }
 
   pub fn objects_mirror(&self, _remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
-    let repo_name: String = project.0.clone() + ".git";
+    let ProjectName(project) = project;
+    let repo_name: String = format!("{}.git", project);
     self.path.join("objects").join(repo_name)
   }
 
   pub fn refs_mirror(&self, remote_config: &config::RemoteConfig, project: &ProjectName) -> PathBuf {
     let remote: &str = remote_config.name.as_ref();
-    let repo_name: String = project.0.clone() + ".git";
+    let ProjectName(project) = project;
+    let repo_name: String = format!("{}.git", project);
     self.path.join("refs").join(remote).join(repo_name)
   }
 
@@ -207,7 +209,7 @@ impl Depot {
     // Disable automatic `git gc`.
     let mut config = objects_repo
       .config()
-      .context(format!("failed to get config for repo at {:?}", objects_path))?;
+      .with_context(|| format!("failed to get config for repo at {:?}", objects_path))?;
     config.set_i32("gc.auto", 0).context("failed to set gc.auto")?;
 
     // Always use git directly.
@@ -304,10 +306,10 @@ impl Depot {
     let head = util::parse_revision(&repo, &remote_config.name, branch)?;
     repo
       .checkout_tree(&head, None)
-      .context(format!("failed to checkout HEAD at {:?}", repo.path()))?;
+      .with_context(|| format!("failed to checkout HEAD at {:?}", repo.path()))?;
     repo
       .set_head_detached(head.id())
-      .context(format!("failed to set HEAD to {:?}", repo.path()))?;
+      .with_context(|| format!("failed to set HEAD to {:?}", repo.path()))?;
     Ok(())
   }
 

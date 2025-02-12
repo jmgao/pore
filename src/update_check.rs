@@ -55,19 +55,12 @@ impl UpdateChecker {
     UpdateChecker { result: rx }
   }
 
-  pub fn filter_new_versions(versions: Vec<Version>) -> Vec<Version> {
-    let mut result = Vec::new();
+  pub fn filter_new_versions(mut versions: Vec<Version>) -> Vec<Version> {
     let current_version = version_compare::Version::from(clap::crate_version!());
-    for version in versions {
-      if version.number == "unreleased" {
-        continue;
-      }
-
-      if current_version < version_compare::Version::from(&version.number) {
-        result.push(version.clone());
-      }
-    }
-    result
+    versions.retain(|version| {
+      version.number != "unreleased" && current_version < version_compare::Version::from(&version.number)
+    });
+    versions
   }
 
   pub fn finish(self) {
