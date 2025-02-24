@@ -28,12 +28,12 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
 use std::ffi::OsString;
 use std::fmt::Write as _;
+use std::io::IsTerminal;
 use std::io::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Error};
-use atty::Stream;
 use joinery::{Joinable, JoinableIterator};
 use progpool::{Job, Pool};
 
@@ -1005,7 +1005,7 @@ fn main() {
   };
   let mut pool = Pool::with_size(pool_size);
 
-  let update_checker = if config.update_check && atty::is(Stream::Stdout) {
+  let update_checker = if config.update_check && std::io::stdout().is_terminal() {
     Some(UpdateChecker::fetch())
   } else {
     None
