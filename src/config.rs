@@ -27,7 +27,6 @@ use anyhow::{Context, Error};
 use regex::Regex;
 
 const DEFAULT_CONFIG: &str = "\
-update_check = true
 autosubmit = false
 presubmit = false
 
@@ -84,10 +83,6 @@ global = 0
 status = -16
 ";
 
-fn default_update_check() -> bool {
-  true
-}
-
 fn default_autosubmit() -> bool {
   false
 }
@@ -120,9 +115,6 @@ fn default_parallelism() -> HashMap<String, i32> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-  #[serde(default = "default_update_check")]
-  pub update_check: bool,
-
   #[serde(default = "default_autosubmit")]
   pub autosubmit: bool,
 

@@ -28,7 +28,6 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto as _;
 use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::io::IsTerminal;
 use std::io::Write as _;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -52,14 +51,12 @@ mod depot;
 mod hooks;
 mod manifest;
 mod tree;
-mod update_check;
 mod util;
 
 use config::Config;
 use depot::Depot;
 use manifest::Manifest;
 use tree::{CheckoutType, FetchTarget, FetchType, FileState, GroupFilter, Tree};
-use update_check::UpdateChecker;
 
 fn aosp_remote_style() -> console::Style {
   console::Style::new().bold().green()
@@ -1005,12 +1002,6 @@ fn main() {
   };
   let mut pool = Pool::with_size(pool_size);
 
-  let update_checker = if config.update_check && std::io::stdout().is_terminal() {
-    Some(UpdateChecker::fetch())
-  } else {
-    None
-  };
-
   let command_action = || -> Result<i32, Error> {
     match cmd {
       Commands::Init {
@@ -1261,10 +1252,6 @@ fn main() {
       }
     }
   };
-
-  if let Some(u) = update_checker {
-    u.finish();
-  }
 
   match command_action() {
     Ok(rc) => std::process::exit(rc),
