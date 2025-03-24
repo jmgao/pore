@@ -29,8 +29,6 @@ use std::convert::TryInto as _;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::Write as _;
-#[cfg(unix)]
-use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Error};
@@ -688,6 +686,19 @@ fn cmd_status(
   Ok(status)
 }
 
+#[cfg(unix)]
+fn is_same_device(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
+  use std::os::unix::fs::MetadataExt as _;
+  left.dev() == right.dev()
+}
+
+#[cfg(windows)]
+fn is_same_device(left: &std::fs::Metadata, right: &std::fs::Metadata) -> bool {
+  // TODO(https://github.com/rust-lang/rust/issues/63010): Use std::os::windows::fs::MetadataExt::volume_serial_number.
+  let _ = (left, right);
+  false
+}
+
 fn cmd_import(config: &Config, pool: &mut Pool, target_path: Option<PathBuf>, copy: bool) -> Result<i32, Error> {
   let target_path = target_path.unwrap_or(PathBuf::from("."));
   let target_metadata = std::fs::metadata(&target_path)?;
@@ -714,7 +725,7 @@ fn cmd_import(config: &Config, pool: &mut Pool, target_path: Option<PathBuf>, co
     std::fs::create_dir_all(&depot.path).context("failed to create depot directory")?;
     let depot_metadata = std::fs::metadata(&depot.path)?;
 
-    if !copy && depot_metadata.dev() != target_metadata.dev() {
+    if !copy && !is_same_device(&depot_metadata, &target_metadata) {
       bail!(
         "Depot ({:?}) and target ({:?}) appear to be on different filesystems.\n       \
              Either move the depot to the same filesystem, or use --copy to copy instead.",

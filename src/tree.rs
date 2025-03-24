@@ -19,8 +19,6 @@ use std::fmt;
 use std::io::Write;
 use std::iter::FromIterator as _;
 use std::ops::Deref as _;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Error};
@@ -1039,6 +1037,8 @@ impl Tree {
     // that prohibits it.
     #[cfg(unix)]
     {
+      use std::os::unix::fs::PermissionsExt as _;
+
       let mut permissions = file.metadata()?.permissions();
       permissions.set_mode(0o700);
       file.set_permissions(permissions)?;

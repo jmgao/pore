@@ -10,7 +10,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+        - macos-latest
+        - ubuntu-latest
+        - windows-latest
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +28,7 @@ jobs:
         with:
           tool: cargo-hack,taplo-cli
       - run: taplo fmt --check --diff
+        if: ${{ matrix.os != 'windows-latest' }} # https://github.com/tamasfe/taplo/issues/766
       - run: cargo fmt --all -- --check
       - run: cargo hack clippy --all-targets --feature-powerset --workspace -- --deny warnings
       - run: cargo hack test --all-targets --feature-powerset --workspace
