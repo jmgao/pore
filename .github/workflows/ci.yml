@@ -19,7 +19,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack,taplo-cli
-      - run: taplo fmt --check
+      - run: taplo fmt --check --diff
       - run: cargo fmt --all -- --check
       - run: cargo hack clippy --all-targets --feature-powerset --workspace -- --deny warnings
       - run: cargo hack test --all-targets --feature-powerset --workspace
