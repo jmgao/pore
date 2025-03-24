@@ -1,7 +1,7 @@
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{Context as _, Error};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 

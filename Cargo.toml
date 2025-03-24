@@ -48,3 +48,9 @@ tracing-subscriber = { version = "^0.3.18", default-features = false }
 
 joinery = { version = "3.0", default-features = false }
 dashmap = { version = "5.4.0", default-features = false }
+
+[lints.clippy]
+unused_trait_names = "warn"
+
+[lints.rust]
+unused-extern-crates = "warn"

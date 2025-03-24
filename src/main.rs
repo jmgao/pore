@@ -29,17 +29,17 @@ use std::convert::TryInto as _;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::Write as _;
-use std::os::unix::fs::MetadataExt;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Error};
-use joinery::{Joinable, JoinableIterator};
+use anyhow::{Context as _, Error};
+use joinery::{Joinable as _, JoinableIterator as _};
 use progpool::{Job, Pool};
 
 #[macro_export]
 macro_rules! fatal {
   ($($tt:tt)*) => {{
-    use std::io::Write;
     write!(&mut ::std::io::stderr(), "fatal: ").unwrap();
     writeln!(&mut ::std::io::stderr(), $($tt)*).unwrap();
     ::std::process::exit(1)

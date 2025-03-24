@@ -21,7 +21,7 @@ use filetime::FileTime;
 use fs4::fs_std::FileExt;
 use std::fs::File;
 
-use anyhow::{Context, Error};
+use anyhow::{Context as _, Error};
 
 use super::config;
 use super::util;
