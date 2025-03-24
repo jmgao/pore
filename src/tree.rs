@@ -17,13 +17,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Write;
-use std::iter::FromIterator;
-use std::ops::Deref;
+use std::iter::FromIterator as _;
+use std::ops::Deref as _;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{Context as _, Error};
 use progpool::{ExecutionResult, ExecutionResults, Job, Pool};
 use url::Url;
 use walkdir::WalkDir;

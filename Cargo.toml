@@ -47,3 +47,9 @@ tracing-subscriber = "^0.3.18"
 
 joinery = "3.0"
 dashmap = "5.4.0"
+
+[lints.clippy]
+unused_trait_names = "warn"
+
+[lints.rust]
+unused-extern-crates = "warn"

@@ -17,13 +17,13 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
+use std::io::Read as _;
 use std::path::Path;
 use std::path::PathBuf;
 
 use super::depot::Depot;
 
-use anyhow::{Context, Error};
+use anyhow::{Context as _, Error};
 use regex::Regex;
 
 const DEFAULT_CONFIG: &str = "\
