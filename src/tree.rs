@@ -585,6 +585,7 @@ impl Tree {
     manifest: &Manifest,
     under: Option<Vec<PathBuf>>,
     additional_group_filters: Option<Vec<GroupFilter>>,
+    repo_compat: bool,
   ) -> Result<Vec<ProjectInfo>, Error> {
     let default_revision = manifest
       .default
@@ -623,7 +624,11 @@ impl Tree {
         GroupFilter::filter_project(group_filters, additional_group_filters.as_deref(), project)
       })
       .filter(|(project_path, _project)| {
-        paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
+        if repo_compat {
+          paths.is_empty() || paths.iter().any(|path| path == *project_path)
+        } else {
+          paths.is_empty() || paths.iter().any(|path| Path::new(path).starts_with(project_path))
+        }
       });
 
     let mut projects = Vec::new();
@@ -1083,7 +1088,7 @@ impl Tree {
   }
 
   pub fn checkout(&self, config: &Config, pool: &mut Pool, target_branch: &str) -> Result<i32, Error> {
-    let projects = self.collect_manifest_projects(config, &self.read_manifest()?, None, None)?;
+    let projects = self.collect_manifest_projects(config, &self.read_manifest()?, None, None, false)?;
 
     let mut job = Job::with_name("checkout");
 
@@ -1220,7 +1225,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, sync_under.clone(), None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, sync_under.clone(), None, false)?;
     self.sync_repos(
       pool,
       config,
@@ -1251,7 +1256,7 @@ impl Tree {
     config: Config,
     pool: &mut Pool,
   ) -> Result<ExecutionResults<ProjectBranchStatus, Error>, Error> {
-    let projects = self.collect_manifest_projects(&config, &self.read_manifest()?, None, None)?;
+    let projects = self.collect_manifest_projects(&config, &self.read_manifest()?, None, None, false)?;
 
     let mut job = Job::with_name("branches");
 
@@ -1294,7 +1299,7 @@ impl Tree {
     status_under: Option<Vec<PathBuf>>,
   ) -> Result<ExecutionResults<ProjectStatus, Error>, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, status_under, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, status_under, None, false)?;
 
     let mut job = Job::with_name("status");
     for project in projects {
@@ -1475,7 +1480,7 @@ impl Tree {
     }
 
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, upload_under, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, upload_under, None, false)?;
     let mut uploads: Vec<UploadInfo> = Vec::new();
 
     for project in projects {
@@ -1598,7 +1603,7 @@ impl Tree {
     prune_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, prune_under, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, prune_under, None, false)?;
 
     let mut job = Job::with_name("pruning");
 
@@ -1696,7 +1701,7 @@ impl Tree {
     rebase_under: Option<Vec<PathBuf>>,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, rebase_under, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, rebase_under, None, false)?;
 
     if interactive {
       ensure!(
@@ -1833,7 +1838,7 @@ impl Tree {
     repo_compat: bool,
   ) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, forall_under, group_filters)?;
+    let projects = self.collect_manifest_projects(config, &manifest, forall_under, group_filters, repo_compat)?;
 
     let mut job = Job::with_name("forall");
 
@@ -1911,7 +1916,7 @@ impl Tree {
   pub fn preupload(&self, config: &Config, pool: &mut Pool, under: Option<Vec<PathBuf>>) -> Result<i32, Error> {
     let manifest = self.read_manifest().context("failed to read manifest")?;
     let projects = self
-      .collect_manifest_projects(config, &manifest, under, None)
+      .collect_manifest_projects(config, &manifest, under, None, false)
       .context("failed to collect manifest projects")?;
 
     let hook_project_name = match manifest.repo_hooks {
@@ -2107,7 +2112,7 @@ impl Tree {
 
   pub fn list(&self, config: &Config) -> Result<i32, Error> {
     let manifest = self.read_manifest()?;
-    let projects = self.collect_manifest_projects(config, &manifest, None, None)?;
+    let projects = self.collect_manifest_projects(config, &manifest, None, None, false)?;
     for project in projects {
       println!("{} : {}", project.project_path, project.project_name);
     }

@@ -838,7 +838,7 @@ fn cmd_info(config: &Config, tree: &Tree, paths: &[&Path]) -> Result<i32, Error>
   println!("----------------------------");
 
   let manifest = tree.read_manifest()?;
-  let projects = tree.collect_manifest_projects(config, &manifest, None, None)?;
+  let projects = tree.collect_manifest_projects(config, &manifest, None, None, false)?;
   let selected_projects = if paths.is_empty() {
     projects
   } else {
