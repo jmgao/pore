@@ -756,6 +756,7 @@ impl Tree {
       for project in &projects {
         let lfs_projects = &lfs_projects;
         let project_path = tree_root.join(&project.project_path);
+        let manifest_branch = self.config.branch.clone();
 
         job.add_task(&project.project_path, move || {
           let remote = config
@@ -846,6 +847,10 @@ impl Tree {
                   .reset(new_head.as_object(), git2::ResetType::Soft, None)
                   .with_context(|| format!("failed to move HEAD to {:?}", new_head))?;
               }
+
+              // Create a 'm/<manifest branch>' tag pointing to this commit.
+              let tag_name = format!("m/{}", manifest_branch);
+              repo.tag_lightweight(&tag_name, new_head.as_object(), true)?;
             } else {
               depot.clone_repo(remote, project_name, revision, &project_path)?;
             }
