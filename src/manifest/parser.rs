@@ -195,7 +195,7 @@ fn parse_notice(_event: &BytesStart, reader: &mut Reader<impl BufRead>) -> Resul
 
       Event::Text(value) => {
         ensure!(result.is_none(), "multiple text events in <notice>");
-        result = Some(value.unescape()?.into_owned());
+        result = Some(value.decode()?.into_owned());
       }
 
       e => bail!(
